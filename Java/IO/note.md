@@ -244,3 +244,131 @@
     output.write(byte[] b); // 输出若干个字节
     output.flush(); // 强制把缓冲区内容输出，该方法来自于 Flushable 接口
     ```
+
+## 使用文件输入流和输出流实现复制文件操作
+
+```Java
+public class CopyFile {
+    public static void main(String[] args) throws IOException {
+        // 使用 try(resource) 形式先后打开文件输入流和输出流
+        try(InputStream input = new FileInputStream(args[0]);
+            OutputStream output = new FileOutputStream(args[1])) {
+            byte[] buffer = new byte[1024];
+            int n;
+            // 使用缓冲区一次性读取若干个字节至内存当中
+            while((n = input.read(buffer)) != -1) {
+                System.out.printf("read %d bytes.\n", n);
+                // System.out.println(new String(buffer)); // Java 的输出语句会对多余的字节数组内容进行优化
+                // System.out.println(new String(buffer).length()); // 1024 被转换的字节数组长度
+                // System.out.println(new String(buffer).getBytes("UTF-8").length); // 1024 被转换的字节数组长度
+                // output.write(new String(buffer).getBytes("UTF-8")); // 会输出多余的字节数组内容
+                // 使用缓冲区一次性输出若干个字节至输出流当中
+                // 注意由于输入流长度和缓冲区长度的非倍数情况，可能出现最后一次读入时不能将缓冲区完全填满的情况，
+                // 如果不对写入操作加以限制，那么就会输出多余的缓冲区数据，导致输出流文件的编码失败。
+                // 所以正确做法应该是每次输出时都指定缓冲区的起始位置和实际读入长度。
+                output.write(buffer, 0, n);
+            }
+        }
+    }
+}
+```
+
+## Filter 模式
+
+- 为了解决依赖继承会导致子类数量失控的问题，JDK首先将InputStream分为两大类：一类是直接提供数据的基础InputStream，一类是提供额外附加功能的InputStream。类似的，OutputStream也是以这种模式来提供各种功能。
+- 通过一个“基础”组件再叠加各种“附加”功能组件的模式，称之为Filter模式（或者装饰器模式：Decorator）。它可以让我们通过少量的类来实现各种功能的组合。  
+    ![filter01](../image/filter01.png)
+- 无论我们包装多少次，得到的对象始终是InputStream，我们直接用InputStream来引用它，就可以正常读取。
+- Java的IO标准库使用Filter模式为InputStream和OutputStream增加功能：可以把一个InputStream和任意个FilterInputStream组合；可以把一个OutputStream和任意个FilterOutputStream组合。  
+    ![filter02](../image/filter02.png)
+- Filter模式可以在运行期动态增加功能（又称Decorator模式）。
+- **其实现核心就是围绕着最原始的FilterInputStream当中所定义的InputStream类型的属性in，只要这个引用属性的指向不变，我们就可以在其基础上扩充功能，并且最终操控的都是最初传入的输入流对象**。
+
+```Java
+public class FilterInputStreamTest {
+    public static void main(String[] args) throws IOException {
+        byte[] data = "hello, world!".getBytes("UTF-8");
+        // 我们将直接提供数据的输入流传给我们自己设计的额外附加功能的输入流
+        // 最后得到的输入流对象操作方式和之前一致，并且还附带了记录读取字节总数的功能
+        try (CountInputStream input = new CountInputStream(new ByteArrayInputStream(data))) {
+            int n;
+            while ((n = input.read()) != -1)
+                System.out.println((char) n);
+            System.out.printf("Total read %d bytes.\n", input.getBytesRead());
+        }
+    }
+}
+class CountInputStream extends FilterInputStream {
+    private int count = 0;
+    protected CountInputStream(InputStream in) {
+        // 在 FilterInputStream 定义内部有一个 InputStream 类型的属性以及唯一构造方法 FilterInputStream(InputStream in)
+        super(in);
+    }
+    public int getBytesRead() {
+        return this.count;
+    }
+    @Override
+    public int read() throws IOException {
+        // 通过覆写父类方法来实现我们需要的计数功能，不去破坏原有的返回字节表示 int 值的逻辑
+        int n = in.read();
+        if (n != -1)
+            this.count++;
+        return n;
+    }
+    @Override
+    public int read(byte[] b, int off, int len) throws IOException {
+        int n = in.read(b, off, len);
+        this.count += n;
+        return n;
+    }
+}
+```
+
+## 操作 Zip
+
+- ZipInputStream是一种FilterInputStream，它可以直接读取zip包的内容，另一个JarInputStream是从ZipInputStream派生，它增加的主要功能是直接读取jar文件里面的MANIFEST.MF文件。因为本质上jar包就是zip包，只是额外附加了一些固定的描述文件。
+- ZipInputStream可以读取zip格式的流，ZipOutputStream可以把多份数据写入zip包；配合FileInputStream和FileOutputStream就可以读写zip文件。
+
+## 读取 classpath 资源
+
+- 把资源存储在classpath中可以避免文件路径依赖；Class对象的getResourceAsStream()可以从classpath中读取指定资源；根据classpath读取资源时，需要检查返回的InputStream是否为null。
+
+## 序列化
+
+- 序列化是指把一个Java对象变成二进制内容，本质上就是一个byte数组。
+- 序列化后可以把byte数组保存到文件中，或者把byte数组通过网络传输到远程，这样，就相当于**把Java对象存储到文件或者通过网络传输出去**了。
+- 有序列化，就有反序列化，即把一个二进制内容（也就是byte数组）变回Java对象。有了反序列化，保存到文件中的byte数组又可以“变回”Java对象，或者从网络上读取byte数组并把它“变回”Java对象。
+- 一个Java对象要能序列化，必须实现一个特殊的java.io.Serializable接口。Serializable接口没有定义任何方法，它是一个空接口。我们把这样的空接口称为“标记接口”（Marker Interface），**实现了标记接口的类仅仅是给自身贴了个“标记”**，并没有增加任何方法。
+- 把一个Java对象变为byte[]数组，需要使用ObjectOutputStream。它负责把一个Java对象写入一个字节流。
+- 和ObjectOutputStream相反，ObjectInputStream负责从一个字节流读取Java对象。除了能读取基本类型和String类型外，调用readObject()可以直接返回一个Object对象。要把它变成一个特定类型，必须强制转型。
+- readObject()可能抛出的异常有：ClassNotFoundException：没有找到对应的Class；InvalidClassException：Class不匹配。对于ClassNotFoundException，这种情况常见于一台电脑上的Java程序把一个Java对象，例如，Person对象序列化以后，通过网络传给另一台电脑上的另一个Java程序，但是这台电脑的Java程序并没有定义Person类，所以无法反序列化。对于InvalidClassException，这种情况常见于序列化的Person对象定义了一个int类型的age字段，但是反序列化时，Person类定义的age字段被改成了long类型，所以导致class不兼容。
+- 为了避免这种class定义变动导致的不兼容，Java的序列化允许class定义一个特殊的serialVersionUID静态变量，用于标识Java类的序列化“版本”，通常可以由IDE自动生成。如果增加或修改了字段，可以改变serialVersionUID的值，这样就能自动阻止不匹配的class版本。
+- 要特别注意反序列化的几个重要特点：**反序列化时，由JVM直接构造出Java对象，不调用构造方法，构造方法内部的代码，在反序列化时根本不可能执行**。
+
+```Java
+// 使用 ByteArrayOutputStream 在内存中模拟一个 OutputStream
+ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+// ObjectOutputStream 负责将 Java 对象写入一个字节流
+try (ObjectOutputStream output = new ObjectOutputStream(buffer)) {
+    output.writeInt(12345); // 写入基本类型
+    output.writeUTF("Hello"); // 写入字符串
+    output.writeObject(Double.valueOf(123.456)); // 写入实现了 Serializable 接口的 Object
+}
+System.out.println(Arrays.toString(buffer.toByteArray()));
+// 使用 ByteArrayInputStream 在内存中模拟一个 InputStream
+try (ObjectInputStream input = new ObjectInputStream(new ByteArrayInputStream(buffer.toByteArray()))) {
+    int n = input.readInt();
+    String s = input.readUTF();
+    // 由 JVM 直接构造出 Java 对象，不经过构造方法
+    Double d = (Double) input.readObject();
+    System.out.println(n);
+    System.out.println(s);
+    System.out.println(d);
+}
+```
+
+- 因为Java的序列化机制可以导致一个实例能直接从byte数组创建，而不经过构造方法，因此，它存在一定的安全隐患。一个精心构造的byte数组被反序列化后可以执行特定的Java代码，从而导致严重的安全漏洞。
+- 实际上，Java本身提供的基于对象的序列化和反序列化机制既存在安全性问题，也存在兼容性问题。**更好的序列化方法是通过JSON这样的通用数据结构来实现**，只输出基本类型（包括String）的内容，而不存储任何与代码相关的信息。
+- Java的序列化机制仅适用于Java，如果需要与其它语言交换数据，必须使用通用的序列化方法，例如JSON。
+
+## Reader
