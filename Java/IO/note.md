@@ -277,10 +277,10 @@ public class CopyFile {
 
 - 为了解决依赖继承会导致子类数量失控的问题，JDK首先将InputStream分为两大类：一类是直接提供数据的基础InputStream，一类是提供额外附加功能的InputStream。类似的，OutputStream也是以这种模式来提供各种功能。
 - 通过一个“基础”组件再叠加各种“附加”功能组件的模式，称之为Filter模式（或者装饰器模式：Decorator）。它可以让我们通过少量的类来实现各种功能的组合。  
-    ![filter01](../image/filter01.png)
+    ![filter01](./image/filter01.png)
 - 无论我们包装多少次，得到的对象始终是InputStream，我们直接用InputStream来引用它，就可以正常读取。
 - Java的IO标准库使用Filter模式为InputStream和OutputStream增加功能：可以把一个InputStream和任意个FilterInputStream组合；可以把一个OutputStream和任意个FilterOutputStream组合。  
-    ![filter02](../image/filter02.png)
+    ![filter02](./image/filter02.png)
 - Filter模式可以在运行期动态增加功能（又称Decorator模式）。
 - **其实现核心就是围绕着最原始的FilterInputStream当中所定义的InputStream类型的属性in，只要这个引用属性的指向不变，我们就可以在其基础上扩充功能，并且最终操控的都是最初传入的输入流对象**。
 
@@ -333,7 +333,7 @@ class CountInputStream extends FilterInputStream {
 
 - 把资源存储在classpath中可以避免文件路径依赖；Class对象的getResourceAsStream()可以从classpath中读取指定资源；根据classpath读取资源时，需要检查返回的InputStream是否为null。
 
-## 序列化
+## 序列化 ObjectOutputStream/ObjectInputStream
 
 - 序列化是指把一个Java对象变成二进制内容，本质上就是一个byte数组。
 - 序列化后可以把byte数组保存到文件中，或者把byte数组通过网络传输到远程，这样，就相当于**把Java对象存储到文件或者通过网络传输出去**了。
@@ -372,3 +372,102 @@ try (ObjectInputStream input = new ObjectInputStream(new ByteArrayInputStream(bu
 - Java的序列化机制仅适用于Java，如果需要与其它语言交换数据，必须使用通用的序列化方法，例如JSON。
 
 ## Reader
+
+- Reader是Java的IO库提供的另一个输入流接口。和InputStream的区别是，InputStream是一个字节流，即以byte为单位读取，而Reader是一个字符流，即以char为单位读取。  
+    ![reader01](./image/reader01.png)
+- Reader定义了所有字符输入流的超类：FileReader实现了文件字符流输入，使用时需要指定编码；CharArrayReader和StringReader可以在内存中模拟一个字符流输入。
+- Reader是基于InputStream构造的：可以通过InputStreamReader在指定编码的同时将任何InputStream转换为Reader。
+
+```Java
+char[] buffer = new char[1024];
+int n;
+InputStream input = new FileInputStream(".\\src\\readme.txt");
+try (Reader reader = new InputStreamReader(input)) {
+    while ((n = reader.read(buffer)) != -1) {
+        System.out.printf("read %d chars.\n", n);
+        System.out.println(new String(buffer));
+    }
+}
+try (CharArrayReader car = new CharArrayReader("Hello".toCharArray())) {
+    while ((n = car.read(buffer)) != -1) {
+        System.out.printf("read %d chars.\n", n);
+        System.out.println(new String(buffer));
+    }
+}
+try (StringReader sr = new StringReader("Hello")) {
+    while ((n = sr.read(buffer)) != -1) {
+        System.out.printf("read %d chars.\n", n);
+        System.out.println(new String(buffer));
+    }
+}
+```
+
+## Writer
+
+- Writer就是带编码转换器的OutputStream，它把char转换为byte并输出。  
+    ![writer01](./image/writer01.png)
+- Writer定义了所有字符输出流的超类：FileWriter实现了文件字符流输出；CharArrayWriter和StringWriter在内存中模拟一个字符流输出。
+- Writer是基于OutputStream构造的，可以通过OutputStreamWriter将OutputStream转换为Writer，转换时需要指定编码。
+
+```Java
+OutputStream output = new FileOutputStream(".\\src\\readme.txt");
+try (Writer writer = new OutputStreamWriter(output)) {
+    writer.write('H');
+    writer.write("Hello".toCharArray());
+    writer.write("Hello");
+}
+try (CharArrayWriter caw = new CharArrayWriter()) {
+    caw.write(65);
+    caw.write(66);
+    caw.write(67);
+    char[] data = caw.toCharArray();
+    System.out.println(new String(data));
+}
+try (StringWriter sw = new StringWriter()) {
+    sw.write(65);
+    sw.write(66);
+    sw.write(67);
+    System.out.println(sw.toString());
+}
+```
+
+## PrintStream 和 PrintWriter
+
+- **PrintStream是一种FilterOutputStream**，它在OutputStream的接口上，额外提供了一些写入各种数据类型的方法。
+- 我们经常使用的System.out.println()实际上就是使用PrintStream打印各种数据。其中，System.out是系统默认提供的PrintStream，表示标准输出。System.err是系统默认提供的标准错误输出。
+- PrintStream和OutputStream相比，除了添加了一组print()/println()方法，可以打印各种数据类型，比较方便外，它还有一个额外的优点，**就是不会抛出IOException**，这样我们在编写代码的时候，就不必捕获IOException。
+- PrintStream最终输出的总是byte数据，而PrintWriter则是扩展了Writer接口，它的print()/println()方法最终输出的是char数据。
+- **前者是对字节输出流的补充，后者是对字符输出流的补充**。
+
+```Java
+// 输出到指定文件
+try (PrintStream ps = new PrintStream(".\\src\\readme.txt")) {
+    ps.println(0);
+    ps.println(false);
+    ps.println("Hello");
+    ps.println(Double.valueOf("123.456"));
+}
+// 输出到标准输出
+try (PrintStream ps = System.out) {
+    ps.println(0);
+    ps.println(false);
+    ps.println("Hello");
+    ps.println(Double.valueOf("123.456"));
+}
+// 输出到标准错误输出
+try (PrintStream ps = System.err) {
+    ps.println(0);
+    ps.println(false);
+    ps.println("Hello");
+    ps.println(Double.valueOf("123.456"));
+}
+// PrintStream 扩展了 OutputStream，而 PrintWriter 扩展了 Writer，两者用法几乎一致，只是输出数据的类型不同
+// 前者是输出字节数据，后者是输出字符数据
+StringWriter sw = new StringWriter();
+try (PrintWriter pw = new PrintWriter(sw)) {
+    pw.println("Hello");
+    pw.println(12345);
+    pw.println(true);
+}
+System.out.println(sw.toString());
+```
