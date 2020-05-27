@@ -15,3 +15,54 @@
 - 对于大多数Java程序来说，我们说多任务，实际上是说如何**使用多线程实现多任务**。
 - 和单线程相比，多线程编程的特点在于：**多线程经常需要读写共享数据，并且需要同步**。例如，播放电影时，就必须由一个线程播放视频，另一个线程播放音频，两个线程需要协调运行，否则画面和声音就不同步。因此，多线程编程的复杂度高，调试更困难。
 - Java多线程编程的特点又在于：多线程模型是Java程序最基本的并发模型；后续读写网络、数据库、Web开发等都依赖Java多线程模型。
+
+## 创建新线程
+
+```Java
+public class CreateThreadTest {
+    public static void main(String[] args) {
+        Thread t = new MyThread();
+        t.start();
+    }
+}
+// 从Thread派生一个自定义类，然后覆写run()方法
+class MyThread extends Thread {
+    @Override
+    public void run() {
+        System.out.println("start new thread!");
+    }
+}
+```
+
+```Java
+public class CreateThreadTest {
+    public static void main(String[] args) {
+        // 实现了Runnable接口的子类
+        Runnable r1 = new MyRunnable();
+        // 有时候为只使用一次的子类单独创建一个.java文件过于浪费
+        // 匿名内部类主要用于实现抽象类和接口，说白了就是一个子类，只不过它们new的对象是抽象类和接口
+        Runnable r2 = new Runnable() {
+            @Override
+            public void run() {
+                System.out.println("[anonymous subclass] start new thread!");
+            }
+        };
+        // 由于Runnable本身是一个函数式接口，因此我们可以进一步地使用lambda表达式来简化实例过程
+        Runnable r3 = () -> System.out.println("[lambda] start new thread!");
+        List<Runnable> list = new ArrayList<Runnable>();
+        list.add(r1);
+        list.add(r2);
+        list.add(r3);
+        for (Runnable r : list) {
+            // 创建Thread实例时，传入一个Runnable实例
+            new Thread(r).start();
+        }
+    }
+}
+class MyRunnable implements Runnable {
+    @Override
+    public void run() {
+        System.out.println("[subclass] start new thread!");
+    }
+}
+```
