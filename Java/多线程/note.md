@@ -94,7 +94,6 @@ class MyRunnable implements Runnable {
 ## 中断线程
 
 - 中断一个线程非常简单，只需要在其它线程中对目标线程调用interrupt()方法（发送一个中断请求），目标线程需要反复检测自身状态是否是interrupted状态，如果是，就立刻结束运行。
-- isInterrupted()方法来自于父类Thread类，而函数式接口Runnable仅含有一个run()方法。
 
     ```Java
     public class CreateThreadTest {
@@ -210,5 +209,110 @@ class MyRunnable implements Runnable {
 - 这会导致如果一个线程更新了某个变量，另一个线程读取的值可能还是更新前的。例如，主内存的变量a = true，线程1执行a = false时，它在此刻仅仅是把变量a的副本变成了false，主内存的变量a还是true，在JVM把修改后的a回写到主内存之前，其他线程读取到的a的值仍然是true，这就造成了多线程之间共享的变量不一致。
 - volatile关键字的目的是告诉虚拟机：**每次访问变量时，总是获取主内存的最新值；每次修改变量后，立刻回写到主内存**。
 - volatile关键字解决的是**可见性**问题：当一个线程修改了某个共享变量的值，其他线程能够立刻看到修改后的值。
-- **不保证该共享变量的值是否被正确修改，即volatile保证的是时效性而不是原子性**。可以想象这样一个场景：某线程对主内存中的某变量共经过二次修改，volatile能保证每次修改变量后立刻回写到主存，但是不能保证其它线程获取的是第一次修改的变量值还是第二次修改的变量值，假设变量值在经过二次修改后才是其它线程所需要的值，这样就造成了类似“脏读”的场景。
+- **不保证该共享变量的值是否被正确修改，即volatile保证的是时效性而不是原子性**。可以想象这样一个场景：某线程对主内存中的某变量共经过二次修改，volatile能保证每次修改变量后立刻回写到主存，但是不能保证其它线程获取的是第一次修改的变量值副本还是第二次修改的变量值副本，假设变量值在经过二次修改后才是其它线程所需要的值，这样就造成了数据不一致的场景。
 - 如果我们去掉volatile关键字，运行上述程序，发现效果和带volatile差不多，这是因为在x86的架构下，JVM回写主内存的速度非常快，但是，换成ARM的架构，就会有显著的延迟。
+
+## 守护线程
+
+- Java程序入口就是由JVM启动main线程，main线程又可以启动其它线程。当所有线程都运行结束时，JVM退出，进程结束。
+- 如果有一个线程没有退出，JVM进程就不会退出。所以，**必须保证所有线程都能及时结束**。
+- 但是有一种线程的目的就是无限循环，例如，一个定时触发任务的线程。
+- 如果这个线程不结束，JVM进程就无法结束。问题是，由谁负责结束这个线程？
+- **然而这类线程经常没有负责人来负责结束它们**。但是，当其它线程结束时，JVM进程又必须要结束，怎么办？
+- **守护线程是指为其它线程服务的线程**。在JVM中，**所有非守护线程都执行完毕后，无论有没有守护线程，虚拟机都会自动退出**。因此，**JVM退出时，不必关心守护线程是否已结束**。
+- 在守护线程中，编写代码要注意：**守护线程不能持有任何需要关闭的资源**，例如打开文件等，因为虚拟机退出时，守护线程没有任何机会来关闭文件，这会导致数据丢失。
+
+```Java
+public class CreateThreadTest {
+    public static void main(String[] args) throws InterruptedException {
+        Thread t = new TimerThread();
+        // 将t线程标记为守护线程
+        t.setDaemon(true);
+        t.start();
+        Thread.sleep(10000);
+        System.out.println("main end...");
+    }
+}
+class TimerThread extends Thread {
+    @Override
+    public void run() {
+        while (true) {
+            System.out.println(LocalTime.now());
+            try {
+                Thread.sleep(1000);
+            } catch (InterruptedException e) {
+            }
+        }
+    }
+}
+```
+
+## 线程同步
+
+- 当多个线程同时运行时，线程的调度由操作系统决定，程序本身无法决定。因此，任何一个线程都有可能在任何指令处被操作系统暂停，然后在某个时间段后继续执行。
+- 这个时候，有个单线程模型下不存在的问题就来了：**如果多个线程同时读写共享变量，会出现数据不一致的问题**。
+
+    ```Java
+    public class SynchronizedTest {
+        public static void main(String[] args) throws InterruptedException {
+            Thread add = new Thread(() -> {
+                for (int i = 0; i < 10000; i++)
+                    // 读取/加/存储，一行语句三条指令
+                    Counter.count += 1;
+            });
+            Thread dec = new Thread(() -> {
+                for (int i = 0; i < 10000; i++)
+                    // 读取/减/存储，一行语句三条指令
+                    Counter.count -= 1;
+            });
+            add.start();
+            dec.start();
+            add.join();
+            dec.join();
+            System.out.println(Counter.count);
+        }
+    }
+    class Counter {
+        public static int count = 0;
+    }
+    ```
+
+- 因为对变量进行读取和写入时，结果要正确，必须保证是原子操作。原子操作是指不能被中断的一个或一系列操作。
+- 多线程模型下，要保证逻辑正确，对共享变量进行读写时，**必须保证一组指令以原子方式执行**：即某一个线程执行时，其他线程必须等待。  
+    ![线程同步01](./image/线程同步01.png) ![线程同步02](./image/线程同步02.png)
+- 通过加锁和解锁的操作，就能保证3条指令总是在一个线程执行期间，不会有其它线程会进入此指令区间。即使在执行期线程被操作系统中断执行，其他线程也会因为无法获得锁导致无法进入此指令区间。只有执行线程将锁释放后，其他线程才有机会获得锁并执行。**这种加锁和解锁之间的代码块我们称之为临界区（Critical Section），任何时候临界区最多只有一个线程能执行**。
+- 可见，保证一段代码的原子性就是通过加锁和解锁实现的。Java程序使用synchronized关键字对**一个对象**进行加锁。
+- synchronized保证了代码块在任意时刻最多只有一个线程能执行。
+
+    ```Java
+    public class SynchronizedTest {
+        public static void main(String[] args) throws InterruptedException {
+            Thread add = new Thread(() -> {
+                for (int i = 0; i < 10000; i++)
+                    // 使用Counter.lock实例作为锁
+                    synchronized (Counter.lock) { // 获取锁
+                        Counter.count += 1;
+                    } // 释放锁
+            });
+            Thread dec = new Thread(() -> {
+                for (int i = 0; i < 10000; i++)
+                    // 使用Counter.lock实例作为锁
+                    synchronized (Counter.lock) { // 获取锁
+                        Counter.count -= 1;
+                    } // 释放锁
+            });
+            add.start();
+            dec.start();
+            add.join();
+            dec.join();
+            System.out.println(Counter.count);
+        }
+    }
+    class Counter {
+        public static final Object lock = new Object();
+        public static int count = 0;
+    }
+    ```
+
+- 使用synchronized解决了多线程同步访问共享变量的正确性问题。但是，它的缺点是带来了性能下降。因为synchronized代码块无法并发执行。此外，加锁和解锁需要消耗一定的时间，所以，synchronized会降低程序的执行效率。
+- 使用synchronized：找出修改共享变量的线程代码块；选择一个**共享实例**作为锁；使用synchronized(lockObject) { ... }。
