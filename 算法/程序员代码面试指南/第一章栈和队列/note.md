@@ -37,3 +37,49 @@ public class MyStack1 {
     }
 }
 ```
+
+## 由两个栈实现的队列
+
+```Java
+public class TwoStacksQueue {
+    private Stack<Integer> stackPush;
+    private Stack<Integer> stackPop;
+
+    public TwoStacksQueue() {
+        super();
+        this.stackPush = new Stack<Integer>();
+        this.stackPop = new Stack<Integer>();
+    }
+
+    private void pushToPop() {
+        if (stackPop.isEmpty())
+            while (!stackPush.isEmpty())
+                stackPop.push(stackPush.pop());
+    }
+
+    public void add(int pushInt) {
+        stackPush.push(pushInt);
+        this.pushToPop();
+    }
+
+    public int poll() {
+        if (stackPop.isEmpty() && stackPush.isEmpty())
+            throw new RuntimeException("Queue is empty!");
+        this.pushToPop();
+        return stackPop.pop();
+    }
+
+    public int peek() {
+        if (stackPop.isEmpty() && stackPush.isEmpty())
+            throw new RuntimeException("Queue is empty!");
+        this.pushToPop();
+        return stackPop.peek();
+    }
+
+    public boolean empty() {
+        if (stackPop.isEmpty() && stackPush.isEmpty())
+            return true;
+        return false;
+    }
+}
+```

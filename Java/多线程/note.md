@@ -332,3 +332,129 @@ class TimerThread extends Thread {
 - 方法内部定义的局部变量，每个线程都会有各自的局部变量，互不影响，并且互不可见，并不需要同步。
 
 ## 同步方法
+
+- 让线程自己选择锁对象往往会使得代码逻辑混乱，也不利于封装。更好的方法是把synchronized逻辑封装起来。
+
+    ```Java
+    public class SynchronizedTest {
+        public static void main(String[] args) throws InterruptedException {
+            Counter c = new Counter();
+            System.out.println(c.get());
+            // 现在，对于Counter类，多线程可以正确调用。
+            Thread add = new Thread(() -> {
+                for (int i = 0; i < 10000; i++)
+                    c.add(1);
+            });
+            Thread dec = new Thread(() -> {
+                for (int i = 0; i < 10000; i++)
+                    c.dec(1);
+            });
+            add.start();
+            dec.start();
+            add.join();
+            dec.join();
+            System.out.println(c.get());
+        }
+    }
+
+    class Counter {
+        private int count = 0;
+        // 这样一来，线程调用add()、dec()方法时，它不必关心同步逻辑，因为synchronized代码块在add()、dec()方法内部。
+        // synchronized锁住的对象是this，即当前实例，这又使得创建多个Counter实例的时候，它们之间互不影响，可以并发执行。
+        public void add(int n) {
+            synchronized (this) {
+                this.count += n;
+            }
+        }
+
+        public void dec(int n) {
+            synchronized (this) {
+                this.count -= n;
+            }
+        }
+        // 读一个int变量不需要同步。
+        public int get() {
+            return count;
+        }
+    }
+    ```
+
+- 如果一个类被设计为允许多线程正确访问，我们就说这个类就是“线程安全”的（thread-safe），上面的Counter类就是线程安全的。Java标准库的java.lang.StringBuffer也是线程安全的。
+- 还有一些不变类，例如String，Integer，LocalDate，它们的所有成员变量都是final，**多线程同时访问时只能读不能写**，这些不变类也是线程安全的。
+- 最后，类似Math这些只提供静态方法，没有成员变量的类，也是线程安全的。
+- 除了上述几种少数情况，大部分类，例如ArrayList，都是非线程安全的类，我们不能在多线程中修改它们。但是，**如果所有线程都只读取，不写入**，那么ArrayList是可以安全地在线程间共享的。
+- **没有特殊说明时，一个类默认是非线程安全的**。
+- 当我们锁住的是this实例时，实际上可以用synchronized修饰这个方法。
+
+    ```Java
+    // 用synchronized修饰的方法就是同步方法，它表示整个方法都必须用this实例加锁。
+    public synchronized void add(int n) {
+        this.count += n;
+    }
+    ```
+
+- 对于static方法，是没有this实例的，因为static方法是针对类而不是实例。但是我们注意到任何一个类都有一个由JVM自动创建的Class实例，因此，对static方法添加synchronized，锁住的是该类的Class实例。
+
+    ```Java
+    public synchronized static void test() {}
+    // 等价于
+    public static void test() {
+        synchronized (Counter.class) {}
+    }
+    ```
+
+## 死锁
+
+- Java的线程锁是可重入的锁。
+- **JVM允许同一个线程重复获取同一个锁，这种能被同一个线程反复获取的锁，就叫做可重入锁**。
+
+    ```Java
+    public synchronized void add(int n) { // 获取this锁。
+        if (n < 0)
+            dec(-n); // 再次获取this锁。
+        else
+            this.count += n;
+    }
+
+    public synchronized void dec(int n) {
+        this.count += n;
+    }
+    ```
+
+- 由于Java的线程锁是可重入锁，所以，获取锁的时候，不但要判断是否是第一次获取，还要记录这是第几次获取。每获取一次锁，记录+1，每退出synchronized块，记录-1，减到0的时候，才会真正释放锁。
+- **一个线程可以获取一个锁后，再继续获取另一个锁**。
+
+    ```Java
+    public void add(int m) {
+        synchronized(lockA) { // 获得lockA的锁
+            this.value += m;
+            synchronized(lockB) { // 获得lockB的锁
+                this.another += m;
+            } // 释放lockB的锁
+        } // 释放lockA的锁
+    }
+
+    public void dec(int m) {
+        synchronized(lockB) { // 获得lockB的锁
+            this.another -= m;
+            synchronized(lockA) { // 获得lockA的锁
+                this.value -= m;
+            } // 释放lockA的锁
+        } // 释放lockB的锁
+    }
+    // 修改后
+    public void dec(int m) {
+        synchronized(lockA) { // 获得lockA的锁
+            this.value -= m;
+            synchronized(lockB) { // 获得lockB的锁
+                this.another -= m;
+            } // 释放lockB的锁
+        } // 释放lockA的锁
+    }
+    ```
+
+- **在获取多个锁的时候，不同线程获取多个不同对象的锁可能导致死锁**。对于上述代码，线程1和线程2如果分别执行add()和dec()方法时：线程1：进入add()，获得lockA；线程2：进入dec()，获得lockB。随后：线程1：准备获得lockB，失败，等待中；线程2：准备获得lockA，失败，等待中。此时，两个线程**各自持有不同的锁，然后各自试图获取对方手里的锁**，造成了双方无限等待下去，这就是死锁。
+- 死锁发生后，没有任何机制能解除死锁，只能强制结束JVM进程。
+- 避免死锁的做法是：**线程获取锁的顺序要一致**。即严格按照先获取lockA，再获取lockB的顺序，
+
+## 使用wait和notify
