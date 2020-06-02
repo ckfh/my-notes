@@ -83,3 +83,29 @@ public class TwoStacksQueue {
     }
 }
 ```
+
+## 仅用递归逆序一个栈
+
+```Java
+public class RecursionReverseStack {
+    // 获取栈底元素并移除栈底元素
+    public static int getAndRemoveLastElement(Stack<Integer> stack) {
+        int result = stack.pop();
+        if (stack.isEmpty())
+            return result;
+        else {
+            int last = getAndRemoveLastElement(stack);
+            stack.push(result);
+            return last;
+        }
+    }
+    // 调用上述方法逆序一个栈
+    public static void reverse(Stack<Integer> stack) {
+        if (stack.isEmpty())
+            return;
+        int i = getAndRemoveLastElement(stack); // 获取栈底元素并移除
+        reverse(stack);                         // 递归调用
+        stack.push(i);                          // 将每次递归调用得到的栈底元素重新压入栈
+    }
+}
+```
