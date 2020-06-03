@@ -1,5 +1,12 @@
 # 记录我自己踩过又老是忘记的坑
 
+## Maven 项目配置
+
+- 远程仓库修改、本地仓库修改、JDK 版本修改。
+- Eclipse IDE 配置：增加本地 Maven 安装目录、修改全局配置文件地址。
+- 下载 archetype-catalog 文件，增加到 IDE 的 catelog 文件目录当中。
+- 新建 Maven 项目时，选择 org.apache.maven.archetypes 所属的 maven-archetype-quickstart 原型进行创建。
+
 ## 值传递和引用传递
 
 - [掘金文章](https://juejin.im/post/5bce68226fb9a05ce46a0476)
