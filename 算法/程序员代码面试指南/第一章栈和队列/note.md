@@ -117,3 +117,24 @@ public class RecursionReverseStack {
 // 添加宠物时，如果是狗就打上时间戳进入狗队列，如果是猫就打上时间戳进入猫队列。
 // 按照进队先后顺序获取一个宠物时，只要比较两个队列头部元素的时间戳大小，谁在前就从哪个队列出队一个宠物进队对象并获取宠物对象。
 ```
+
+## 用一个栈实现另一个栈的排序
+
+```Java
+public static void sortStackByStack(Stack<Integer> stack) {
+    /*
+     * 栈一不为空，弹出栈一元素与栈二栈顶元素比较，小于等于则压入栈二，大于则将栈二元素逐一弹出压入栈一，
+     * 直到栈二栈顶元素小于等于栈一弹出的元素，最后将栈二元素逐一弹出并压入栈一。
+     */
+    Stack<Integer> help = new Stack<Integer>();
+    while (!stack.isEmpty()) {
+        int cur = stack.pop();
+        while (!help.isEmpty() && cur > help.peek())
+            stack.push(help.pop());
+        help.push(cur);
+    }
+    while (!help.isEmpty()) {
+        stack.push(help.pop());
+    }
+}
+```
