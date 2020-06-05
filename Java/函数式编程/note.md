@@ -86,3 +86,70 @@ List<Person> persons = names.stream().map(Person::new).collect(Collectors.toList
 
 - FunctionalInterface允许传入：接口的实现类（传统写法，代码较繁琐）；Lambda表达式（只需列出参数名，由编译器推断类型）；符合方法签名的静态方法；符合方法签名的实例方法（实例类型被看做第一个参数类型）；符合方法签名的构造方法（实例类型被看做返回类型）。
 - FunctionalInterface不强制继承关系，不需要方法名称相同，只要求方法参数（类型和数量）与方法返回类型相同，即认为方法签名相同。
+
+## 使用Stream
+
+- Stream API的基本用法就是：创建一个Stream，然后做若干次转换，最后调用一个求值方法获取真正计算的结果。
+- Stream API的特点是：Stream API提供了一套新的流式处理的抽象序列；Stream API支持函数式编程和链式操作；Stream可以表示无限序列，并且大多数情况下是惰性求值的。
+
+### 创建Stream
+
+```Java
+Stream<String> stream = Stream.of("A", "B", "C", "D"); // 指定元素创建
+stream.forEach(System.out::println);
+```
+
+```Java
+Stream<String> stream1 = Arrays.stream(new String[] { "A", "B", "C" }); // 指定数组创建
+Stream<String> stream2 = Arrays.asList("X", "Y", "Z").stream(); // 指定 Collection 创建
+```
+
+```Java
+Stream<Integer> natual = Stream.generate(new Supplier<Integer>() {
+    private AtomicInteger ai = new AtomicInteger(0);
+
+    @Override
+    public Integer get() {
+        return this.ai.incrementAndGet();
+    }
+}); // 基于 Supplier 创建，这种 Stream 保存的不是元素，而是算法，可用来表示无限序列
+natual.limit(20).forEach(System.out::println); // 无限序列必须变成有限序列再调用最终求值操作
+```
+
+```Java
+// 通过一些 API 提供的接口，直接获得 Stream。
+
+// Files 类的 lines() 方法把一个文件变成一个 Stream，每个元素代表文件的一行内容。此方法对于按行遍历文本文件十分有用。
+try (Stream<String> lines = Files.lines(Paths.get(".\\static\\file.txt"))) {
+    lines.forEach(System.out::println);
+}
+// Pattern 对象有一个 splitAsStream() 方法，可以直接把一个长字符串分割成 Stream 序列而不是数组
+Pattern p = Pattern.compile("\\s+");
+Stream<String> s = p.splitAsStream("The quick brown fox jumps over the lazy dog");
+s.forEach(System.out::println);
+```
+
+```Java
+// 为了保存 int，只能使用 Stream<Integer>，但这样会产生频繁的装箱、拆箱操作。
+IntStream is = Arrays.stream(new int[] { 1, 2, 3 });
+// mapToLong() 调用引用方法将每个元素作为参数传入得到 Long 类型的返回值，最后返回一个 LongStream 序列。
+LongStream ls = Arrays.asList("1", "2", "3").stream().mapToLong(Long::parseLong);
+```
+
+```Java
+// 编写一个能输出斐波那契数列的 LongStream。
+LongStream fiboStream = LongStream.generate(new LongSupplier() {
+    private long t1 = 0;
+    private long t2 = 1;
+    private long nextTerm;
+
+    @Override
+    public long getAsLong() {
+        this.nextTerm = t1 + t2;
+        this.t1 = t2;
+        this.t2 = nextTerm;
+        return this.t1;
+    }
+});
+fiboStream.limit(10).forEach(System.out::println);
+```
