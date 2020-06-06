@@ -153,3 +153,114 @@ LongStream fiboStream = LongStream.generate(new LongSupplier() {
 });
 fiboStream.limit(10).forEach(System.out::println);
 ```
+
+### 使用map
+
+- map()方法用于将一个Stream的每个元素映射成另一个元素并转换成一个新的Stream；可以将一种元素类型转换成另一种元素类型。
+
+```Java
+Arrays.asList("  Apple  ", " pear ", " ORANGE", " BaNaNa ")
+        .stream()
+        .map(String::trim) // 去空格 trim(this) -> String
+        .map(String::toLowerCase) // 变小写 toLowerCase(this) -> String
+        .forEach(System.out::println);
+```
+
+```Java
+String[] array = new String[] { " 2019-12-31 ", "2020 - 01-09 ", "2020- 05 - 01 ", "2022 - 02 - 01",
+        " 2025-01 -01" };
+Arrays.stream(array)
+    .map(str -> str.replaceAll("\\s+", ""))
+    .map(LocalDate::parse) // static LocalDate parse​(CharSequence text). the text to parse such as "2007-12-03", not null.
+    .forEach(System.out::println);
+```
+
+### 使用filter
+
+- 使用filter()方法可以对一个Stream的每个元素进行测试，通过测试的元素被过滤后生成一个新的Stream。
+
+```Java
+// 过滤偶数
+IntStream.of(1, 2, 3, 4, 5, 6, 7, 8, 9)
+    .filter(n -> n % 2 != 0) // 断言型接口对象，接收一个泛型参数，返回一个 boolean 值
+    .forEach(System.out::println);
+```
+
+```Java
+// 从一组给定的 LocalDate 中过滤工作日，等到休息日
+Stream.generate(new Supplier<LocalDate>() {
+    LocalDate start = LocalDate.of(2020, 1, 1);
+    int n = -1;
+
+    @Override
+    public LocalDate get() {
+        this.n++;
+        return start.plusDays(n);
+    }
+})
+.limit(31)
+.filter((ldt) -> ldt.getDayOfWeek() == DayOfWeek.SATURDAY || ldt.getDayOfWeek() == DayOfWeek.SUNDAY)
+.forEach(System.out::println);
+```
+
+```Java
+// 过滤出成绩及格的同学，并打印出名字
+List<Person> persons = Arrays.asList(new Person("小明", 88), new Person("小黑", 62), new Person("小白", 45),
+        new Person("小黄", 78), new Person("小红", 99), new Person("小林", 58));
+persons.stream()
+    .filter((person) -> person.getAge() >= 60)
+    .forEach((person) -> System.out.println(person.getName()));
+```
+
+### 使用reduce
+
+- reduce()方法将一个Stream的每个元素依次作用于BinaryOperator，并将结果合并。
+- reduce()是聚合方法，聚合方法会立刻对Stream进行计算。
+
+```Java
+@FunctionalInterface
+public interface BinaryOperator<T> extends BiFunction<T,T,T>
+T apply(T t, T u)
+```
+
+```Java
+// T reduce​(T identity, BinaryOperator<T> accumulator)
+// 初始化结果为指定值（这里是0），紧接着，reduce()对每个元素依次调用(acc, n) -> acc + n，其中，acc是上次计算的结果。
+int sum = Stream.of(1, 2, 3, 4, 5, 6, 7, 8, 9).reduce(0, (acc, n) -> acc + n);
+System.out.println(sum);
+```
+
+```Java
+// Optional<T> reduce​(BinaryOperator<T> accumulator)
+// 因为Stream的元素有可能是0个，这样就没法调用reduce()的聚合函数了，因此返回Optional对象，需要进一步判断结果是否存在。
+Optional<Integer> opt = Stream.of(1, 2, 3, 4, 5, 6, 7, 8, 9).reduce((acc, n) -> acc + n);
+if (opt.isPresent())
+    System.out.println(opt.get());
+```
+
+```Java
+// 上面是求和，这里是求积，很明显需要把初始值设置为1。
+int mul = Stream.of(1, 2, 3, 4, 5, 6, 7, 8, 9).reduce(1, (acc, n) -> acc * n);
+System.out.println(mul);
+```
+
+```Java
+// 将配置文件的每一行配置通过map()和reduce()操作聚合成一个Map<String, String>。
+List<String> props = Arrays.asList("profile=native", "debug=true", "logging=warn", "interval=500");
+Map<String, String> propMap = props.stream().map((propStr) -> {
+    String[] propKV = propStr.split("\\=", 2); // 只要第一个等号之前的字符串作为key，之后的字符串都作为value，不管是否有等号。
+    Map<String, String> retMap = new HashMap<>();
+    retMap.put(propKV[0], propKV[1]);
+    return retMap; // 将每一个配置字符串都转化为Map对象
+}).reduce(new HashMap<String, String>(), (hm, rm) -> {
+    // 指定初始值为一个HashMap，将序列中的Map对象逐一放入其中，返回这个HashMap给到下一次调用时传入
+    hm.putAll(rm);
+    return hm;
+});
+// 此处的forEach()方法来自Map接口自身
+// public void forEach​(BiConsumer<? super K,? super V> action)
+// 双泛型参数的消费型接口
+propMap.forEach((k, v) -> {
+    System.out.printf("%s = %s\n", k, v);
+});
+```

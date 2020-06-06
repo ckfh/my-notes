@@ -138,3 +138,30 @@ public static void sortStackByStack(Stack<Integer> stack) {
     }
 }
 ```
+
+## 生成窗口最大值数组
+
+```Java
+public static int[] getMaxWindow(int[] arr, int w) {
+    // 双端队列始终维持一个前大后小的结构，随着窗口右移，队列前面的元素会失效。
+    // 维护队列：如果队尾对应的元素小，弹出；如果队尾对应的元素大，就把新的下标加入，继续维护前大后小的结构。
+    if (arr == null || w < 1 || arr.length < w)
+        return null;
+    Deque<Integer> qmax = new LinkedList<Integer>();
+    int[] res = new int[arr.length - w + 1];
+    int index = 0;
+    for (int i = 0; i < arr.length; i++) {
+        // 如果队尾对应的元素小，就弹出队尾，直到队尾对应的元素比当前元素大。这一步相当于找当前窗口最大值。
+        while (!qmax.isEmpty() && arr[qmax.peekLast()] <= arr[i])
+            qmax.pollLast();
+        qmax.offerLast(i);
+        // 检查队头下标是否过期，过期就把队头弹出，即队头元素不包含在当前窗口。
+        if (qmax.peekFirst() == i - w)
+            qmax.pollFirst();
+        // 如果窗口出现了，就开始记录每个窗口的最大值。
+        if (i >= w - 1)
+            res[index++] = arr[qmax.peekFirst()];
+    }
+    return res;
+}
+```
