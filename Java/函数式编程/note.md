@@ -264,3 +264,52 @@ propMap.forEach((k, v) -> {
     System.out.printf("%s = %s\n", k, v);
 });
 ```
+
+### 输出集合
+
+- 这些操作对Stream来说可以分为两类，一类是转换操作，即把一个Stream转换为另一个Stream，例如map()和filter()，另一类是聚合操作，即对Stream的每个元素进行计算，得到一个确定的结果，例如reduce()。
+- 区分这两种操作是非常重要的，因为对于Stream来说，对其进行转换操作**并不会触发任何计算**！
+- 聚合操作是真正需要从Stream请求数据的，对一个Stream做聚合计算后，结果就不是一个Stream，而是一个其他的Java对象。
+- reduce()只是一种聚合操作，如果我们希望把Stream的元素保存到集合，例如List，因为List的元素是确定的Java对象，因此，把Stream变为List不是一个转换操作，而是一个聚合操作，它会强制Stream输出每个元素。
+- 把Stream的每个元素收集到List的方法是调用collect()并传入Collectors.toList()对象，它实际上是一个Collector实例，通过类似reduce()的操作，把每个元素添加到一个收集器中（实际上是ArrayList）。
+
+    ```Java
+    // 过滤非空字符串，然后把非空字符串保存到list中
+    Stream<String> stream = Stream.of("Apple", "", null, "Pear", "  ", "Orange");
+    List<String> list = stream.filter(s -> s != null && !StringUtils.isBlank(s)).collect(Collectors.toList());
+    System.out.println(list);
+    ```
+
+- 把Stream的元素输出为数组和输出为List类似，我们只需要调用toArray()方法，并传入数组的“构造方法”。
+
+    ```Java
+    List<String> list = Arrays.asList("Apple", "Banana", "Orange");
+    // toArray(IntFunction<String[]> generator)
+    // String[] apply(int)
+    // 生成器函数取一个整数，它是所需数组的大小，并生成所需大小的数组。
+    String[] array = list.stream().toArray(String[]::new);
+    System.out.println(Arrays.toString(array));
+    ```
+
+- 如果我们要把Stream的元素收集到Map中，就稍微麻烦一点。因为对于每个元素，添加到Map时需要key和value，因此，我们要指定两个映射函数，分别把元素映射为key和value。
+
+    ```Java
+    Stream<String> stream = Stream.of("APPL:Apple", "MSFT:Microsoft");
+    // toMap(Function<? super String, ? extends String> keyMapper, Function<? super String, ? extends String> valueMapper)
+    Map<String, String> map = stream
+            .collect(Collectors.toMap(
+                    s -> s.substring(0, s.indexOf(':')),
+                    s -> s.substring(s.indexOf(':') + 1)));
+    System.out.println(map);
+    ```
+
+- 分组输出使用Collectors.groupingBy()，它需要提供两个函数：一个是分组的key，这里使用s -> s.substring(0, 1)，表示只要首字母相同的String分到一组，第二个是分组的value，这里直接使用Collectors.toList()，表示输出为List。
+
+    ```Java
+    List<String> list = Arrays.asList("Apple", "Banana", "Blackberry", "Coconut", "Avocado", "Cherry", "Apricots");
+    Map<String, List<String>> groups = list.stream()
+            .collect(Collectors.groupingBy(s -> s.substring(0, 1), Collectors.toList()));
+    System.out.println(groups);
+    ```
+
+### 其它操作
