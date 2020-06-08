@@ -37,3 +37,25 @@ public ListNode addTwoNumbers(ListNode l1, ListNode l2) {
     return ans.next;
 }
 ```
+
+## 无重复字符的最长子串
+
+```Java
+// 维护一个滑动窗口，以起始字符为左边界，不断向右扩大窗口范围。
+// 扩大的依据是当前字符不在该无重复字符子串中；缩小的依据是当前字符已存在，需要不断改变左边界的值直到移除之前的重复字符。
+public int lengthOfLongestSubstring(String s) {
+    Set<Character> occ = new HashSet<>();
+    int n = s.length();
+    int rk = -1, ans = 0;
+    for (int i = 0; i < n; i++) {
+        if (i != 0)
+            occ.remove(s.charAt(i - 1));
+        while (rk + 1 < n && !occ.contains(s.charAt(rk + 1))) {
+            occ.add(s.charAt(rk + 1));
+            rk++;
+        }
+        ans = Math.max(ans, rk - i + 1);
+    }
+    return ans;
+}
+```

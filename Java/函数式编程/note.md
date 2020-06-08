@@ -313,3 +313,53 @@ propMap.forEach((k, v) -> {
     ```
 
 ### 其它操作
+
+```Java
+List<String> list = Stream.of("Orange", "apple", "Banana")
+        .sorted(String::compareToIgnoreCase) // 排序
+        .collect(Collectors.toList());
+System.out.println(list);
+```
+
+```Java
+List<String> list = Stream.of("A", "B", "A", "C", "B", "D")
+        .distinct() // 去重
+        .collect(Collectors.toList());
+System.out.println(list);
+```
+
+```Java
+List<String> list = Stream.of("A", "B", "C", "D", "E", "F")
+        .skip(2) // 跳过
+        .limit(3) // 截取
+        .collect(Collectors.toList());
+System.out.println(list);
+```
+
+```Java
+Stream<String> s1 = Stream.of("A", "B", "C");
+Stream<String> s2 = Stream.of("D", "E");
+Stream<String> s = Stream.concat(s1, s2); // 合并
+System.out.println(s.collect(Collectors.toList()));
+```
+
+```Java
+// 所谓flatMap()，是指把Stream的每个元素（这里是List）映射为Stream，然后合并成一个新的Stream
+// 注意是一个stream，如果用map是多个stream
+Stream<List<Integer>> s = Stream.of(
+        Arrays.asList(1, 2, 3),
+        Arrays.asList(4, 5, 6),
+        Arrays.asList(7, 8, 9)
+);
+Stream<Integer> i = s.flatMap(Collection::stream);
+```
+
+```Java
+// 经过parallel()转换后的Stream只要可能，就会对后续操作进行并行处理。
+Stream<String> s = Stream.of("apple", "Orange", "Banana");
+String[] result = s.parallel().sorted().toArray(String[]::new);
+System.out.println(Arrays.toString(result));
+```
+
+![其它聚合方法](.\image\其它聚合.png)
+![小结](.\image\小结.png)
