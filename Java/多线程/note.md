@@ -209,7 +209,7 @@ class MyRunnable implements Runnable {
 - 线程间共享变量需要使用volatile关键字标记，确保每个线程都能读取到更新后的变量值。
 - 为什么要对线程间共享的变量用关键字volatile声明。这涉及到Java的内存模型。在Java虚拟机中，变量的值保存在主内存中，但是，**当线程访问变量时，它会先获取一个副本，并保存在自己的工作内存中**。如果线程修改了变量的值，虚拟机会在某个时刻把修改后的值回写到主内存，但是，**这个时间是不确定的**！  
     ![中断线程01](./image/中断线程01.png)
-- 这会导致如果一个线程更新了某个变量，另一个线程读取的值可能还是更新前的。例如，主内存的变量a = true，线程1执行a = false时，它在此刻仅仅是把变量a的**副本**变成了false，主内存的变量a还是true，在JVM把修改后的a回写到主内存之前，其他线程读取到的a的值仍然是true，这就造成了多线程之间共享的变量不一致。
+- 这会导致如果一个线程更新了某个变量，另一个线程读取的值可能还是更新前的。例如，主内存的变量a = true，线程1执行a = false时，它在此刻仅仅是把变量a的**副本**变成了false，主内存的变量a还是true，在JVM把修改后的a回写到主内存之前，其它线程读取到的a的值仍然是true，这就造成了多线程之间共享的变量不一致。
 - volatile关键字的目的是告诉虚拟机：**每次访问变量时，总是获取主内存的最新值；每次修改变量后，立刻回写到主内存**。
 - volatile关键字解决的是**可见性**问题：当一个线程修改了某个共享变量的值，其它线程能够立刻看到修改后的值。
 - 如果我们去掉volatile关键字，运行上述程序，发现效果和带volatile差不多，这是因为在x86的架构下，JVM回写主内存的速度非常快，但是，换成ARM的架构，就会有显著的延迟。
@@ -280,7 +280,7 @@ class TimerThread extends Thread {
     ```
 
 - 因为对变量进行读取和写入时，结果要正确，必须保证是原子操作。原子操作是指不能被中断的一个或一系列操作。
-- 多线程模型下，要保证逻辑正确，对共享变量进行读写时，**必须保证一组指令以原子方式执行**：即某一个线程执行时，其他线程必须等待。  
+- 多线程模型下，要保证逻辑正确，对共享变量进行读写时，**必须保证一组指令以原子方式执行**：即某一个线程执行时，其它线程必须等待。  
     ![线程同步01](./image/线程同步01.png) ![线程同步02](./image/线程同步02.png)
 - 通过加锁和解锁的操作，就能保证3条指令总是在一个线程执行期间，不会有其它线程会进入此指令区间。即使在执行期线程被操作系统中断执行，其他线程也会因为无法获得锁导致无法进入此指令区间。只有执行线程将锁释放后，其他线程才有机会获得锁并执行。**这种加锁和解锁之间的代码块我们称之为临界区（Critical Section），任何时候临界区最多只有一个线程能执行**。
 - 可见，保证一段代码的原子性就是通过加锁和解锁实现的。Java程序使用synchronized关键字对**一个对象**进行加锁。
@@ -458,3 +458,128 @@ class TimerThread extends Thread {
 - 避免死锁的做法是：**线程获取锁的顺序要一致**。即严格按照先获取lockA，再获取lockB的顺序，
 
 ## 使用wait和notify
+
+- synchronized解决了多线程竞争的问题，但是synchronized并没有解决多线程协调的问题。
+
+    ```Java
+    class TaskQueue {
+        Queue<String> queue = new LinkedList<>();
+        // 多个线程同时往队列中添加任务，可以用synchronized加锁，从而保证每个任务都被添加到了队列当中。
+        public synchronized void addTask(String s) {
+            this.queue.add(s);
+        }
+    }
+    ```
+
+    ```Java
+    class TaskQueue {
+        Queue<String> queue = new LinkedList<>();
+
+        public synchronized void addTask(String s) {
+            this.queue.add(s);
+        }
+        // 执行while()循环时，已经在getTask()入口获取了this锁，其它线程根本无法调用addTask()，因为addTask()执行条件也是获取this锁。
+        // 线程1可以调用addTask()不断往队列中添加任务；
+        // 线程2可以调用getTask()从队列中获取任务。如果队列为空，则getTask()应该等待，直到队列中至少有一个任务时再返回。
+        public synchronized String getTask() {
+            while (queue.isEmpty()) {
+            }
+            return queue.remove();
+        }
+    }
+    ```
+
+- 多线程协调运行的原则就是：当条件不满足时，线程进入等待状态；当条件满足时，线程被唤醒，继续执行任务。
+- wait()方法必须在**当前获取的锁对象**上调用，如果线程获取的是this锁，那就要调用this.wait()进入等待状态。
+- 调用wait()方法后，线程进入等待状态，wait()方法不会返回，直到将来某个时刻，线程从等待状态被其他线程唤醒后，wait()方法才会返回，然后，继续执行下一条语句。
+- 首先，它不是一个普通的Java方法，而是定义在Object类的一个native方法，也就是由JVM的C代码实现的。其次，必须在synchronized块中才能调用wait()方法，因为wait()方法调用时，会**释放**线程获得的锁，wait()方法返回后，线程又会重新试图获得锁。
+
+    ```Java
+    public synchronized String getTask() {
+        while (queue.isEmpty()) {
+            // 释放this锁
+            this.wait(); // 线程进入等待状态
+            // 重新获取this锁
+        }
+        return queue.remove();
+    }
+    ```
+
+- 如何让等待的线程被重新唤醒，然后从wait()方法返回，答案是在**相同的锁对象**上调用notify()方法。
+
+    ```Java
+    public synchronized void addTask(String s) {
+        // 往队列中添加了任务后，线程立刻对this锁对象调用notify()方法，
+        // 这个方法会唤醒一个正在this锁等待的线程（就是在getTask()中位于this.wait()的线程），从而使得等待线程从this.wait()方法返回。
+        this.queue.add(s);
+        this.notify(); // 唤醒在this锁等待的线程
+    }
+    ```
+
+- 通常来说，notifyAll()更安全。有些时候，如果我们的代码逻辑考虑不周，用notify()会导致只唤醒了一个线程，而其它线程可能永远等待下去醒不过来了。
+
+    ```Java
+    public class TaskQueue {
+        Queue<String> queue = new LinkedList<>();
+
+        public synchronized void addTask(String s) {
+            this.queue.add(s);
+            // 使用notifyAll()将唤醒所有当前正在this锁等待的线程，而notify()只会唤醒其中一个（具体哪个依赖操作系统，有一定的随机性）。
+            // 这是因为可能有多个线程正在getTask()方法内部的wait()中等待，使用notifyAll()将一次性全部唤醒。
+            // 假设当前有3个线程被唤醒，唤醒后，首先要等待执行addTask()的线程结束此方法后，才能释放this锁，随后，这3个线程中只能有一个获取到this锁，剩下两个将继续等待。
+            this.notifyAll();
+        }
+
+        public synchronized String getTask() throws InterruptedException {
+            // 不要使用if语句进行判断，因为即使获取了this锁仍需要进行一次队列是否为空判断，否则在移除操作时将发生错误。
+            while (queue.isEmpty())
+                this.wait(); // 收到中断请求会抛出InterruptedException异常
+            return this.queue.remove();
+        }
+    }
+
+    public static void main(String[] args) throws InterruptedException {
+        TaskQueue q = new TaskQueue();
+        List<Thread> ts = new ArrayList<>();
+        // 启动5个获取任务执行的线程
+        for (int i = 0; i < 5; i++) {
+            Thread t = new Thread(() -> {
+                while (true) {
+                    try {
+                        String s = q.getTask();
+                        System.out.println("execute task: " + s);
+                    } catch (InterruptedException e) {
+                        return;
+                    }
+                }
+            });
+            t.start();
+            ts.add(t);
+        }
+        // 启动1个添加任务的线程，共往任务队列中添加10个任务
+        Thread add = new Thread(() -> {
+            for (int i = 0; i < 10; i++) {
+                String s = "t-" + Math.random();
+                System.out.println("add task: " + s);
+                q.addTask(s);
+                try {
+                    Thread.sleep(100);
+                } catch (InterruptedException e) {
+                    return;
+                }
+            }
+        });
+        add.start();
+        // 等待任务添加线程结束
+        add.join();
+        Thread.sleep(100);
+        // 任务获取线程在获取任务执行后会进入等待状态，此时JVM退出需要进行线程中断操作，否则就会无限等待下去，导致JVM无法退出。
+        for (Thread t : ts) {
+            t.interrupt();
+        }
+    }
+    ```
+
+- wait和notify用于多线程协调运行：在synchronized内部可以调用wait()使线程进入等待状态；必须在已获得的锁对象上调用wait()方法；在synchronized内部可以调用notify()或notifyAll()唤醒其它等待线程；必须在已获得的锁对象上调用notify()或notifyAll()方法；已唤醒的线程还需要重新获得锁后才能继续执行。
+
+## 使用ReentrantLock
