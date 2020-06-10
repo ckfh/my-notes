@@ -459,7 +459,7 @@ class TimerThread extends Thread {
 
 ## 使用wait和notify
 
-- synchronized解决了多线程竞争的问题，但是synchronized并没有解决多线程协调的问题。
+- **synchronized解决了多线程竞争的问题，但是synchronized并没有解决多线程协调的问题。**
 
     ```Java
     class TaskQueue {
@@ -489,10 +489,10 @@ class TimerThread extends Thread {
     }
     ```
 
-- 多线程协调运行的原则就是：当条件不满足时，线程进入等待状态；当条件满足时，线程被唤醒，继续执行任务。
+- **多线程协调**运行的原则就是：当条件不满足时，线程进入等待状态；当条件满足时，线程被唤醒，继续执行任务。
 - wait()方法必须在**当前获取的锁对象**上调用，如果线程获取的是this锁，那就要调用this.wait()进入等待状态。
-- 调用wait()方法后，线程进入等待状态，wait()方法不会返回，直到将来某个时刻，线程从等待状态被其他线程唤醒后，wait()方法才会返回，然后，继续执行下一条语句。
-- 首先，它不是一个普通的Java方法，而是定义在Object类的一个native方法，也就是由JVM的C代码实现的。其次，必须在synchronized块中才能调用wait()方法，因为wait()方法调用时，会**释放**线程获得的锁，wait()方法返回后，线程又会重新试图获得锁。
+- 调用wait()方法后，线程进入等待状态，wait()方法不会返回，直到将来某个时刻，线程从等待状态被其它线程唤醒后，wait()方法才会返回，然后，继续执行下一条语句。
+- 首先，它不是一个普通的Java方法，而是定义在Object类的一个native方法，也就是由JVM的C代码实现的。其次，**必须在synchronized块中才能调用wait()方法**，因为wait()方法调用时，会**释放**线程获得的锁，wait()方法返回后，线程又会重新试图获得锁。
 
     ```Java
     public synchronized String getTask() {
@@ -541,7 +541,7 @@ class TimerThread extends Thread {
     public static void main(String[] args) throws InterruptedException {
         TaskQueue q = new TaskQueue();
         List<Thread> ts = new ArrayList<>();
-        // 启动5个获取任务执行的线程
+        // 启动5个获取任务并执行的线程
         for (int i = 0; i < 5; i++) {
             Thread t = new Thread(() -> {
                 while (true) {
@@ -556,7 +556,7 @@ class TimerThread extends Thread {
             t.start();
             ts.add(t);
         }
-        // 启动1个添加任务的线程，共往任务队列中添加10个任务
+        // 启动1个添加任务线程，共往任务队列中添加10个任务
         Thread add = new Thread(() -> {
             for (int i = 0; i < 10; i++) {
                 String s = "t-" + Math.random();
@@ -580,6 +580,91 @@ class TimerThread extends Thread {
     }
     ```
 
-- wait和notify用于多线程协调运行：在synchronized内部可以调用wait()使线程进入等待状态；必须在已获得的锁对象上调用wait()方法；在synchronized内部可以调用notify()或notifyAll()唤醒其它等待线程；必须在已获得的锁对象上调用notify()或notifyAll()方法；已唤醒的线程还需要重新获得锁后才能继续执行。
+- **wait和notify用于多线程协调运行：在synchronized内部可以调用wait()使线程进入等待状态；必须在已获得的锁对象上调用wait()方法；在synchronized内部可以调用notify()或notifyAll()唤醒其它等待线程；必须在已获得的锁对象上调用notify()或notifyAll()方法；已唤醒的线程还需要重新获得锁后才能继续执行。**
 
 ## 使用ReentrantLock
+
+- Java语言直接提供了synchronized关键字用于加锁，但这种锁一是很重，二是获取时必须一直等待，没有额外的尝试机制。
+- ReentrantLock可以替代synchronized进行同步；ReentrantLock获取锁更安全；必须先获取到锁，再进入try {...}代码块，最后使用finally保证释放锁；可以使用tryLock()尝试获取锁。
+- 因为synchronized是Java语言层面提供的语法，所以我们不需要考虑异常，而ReentrantLock是Java代码实现的锁，我们就必须先获取锁，然后在finally中正确释放锁。
+- 顾名思义，ReentrantLock是可重入锁，它和synchronized一样，一个线程可以多次获取同一个锁。
+
+    ```Java
+    public class Counter {
+        private final Lock lock = new ReentrantLock();
+        private int count;
+
+        public void add(int n) {
+            this.lock.lock();
+            try {
+                this.count += n;
+            } finally {
+                this.lock.unlock();
+            }
+        }
+    }
+    ```
+
+- **和synchronized不同的是，ReentrantLock可以尝试获取锁。**
+
+    ```Java
+    public void add(int n) throws InterruptedException {
+        // 尝试获取锁的时候，最多等待1秒。如果1秒后仍未获取到锁，tryLock()返回false，程序就可以做一些额外处理，而不是无限等待下去。
+        if (this.lock.tryLock(1, TimeUnit.SECONDS)) {
+            try {
+                this.count += n;
+            } finally {
+                this.lock.unlock();
+            }
+        }
+    }
+    ```
+
+- **使用ReentrantLock比直接使用synchronized更安全，线程在tryLock()失败的时候不会导致死锁。**
+
+## 使用Condition
+
+- synchronized可以配合wait和notify实现线程在条件不满足时等待，条件满足时唤醒，用ReentrantLock我们怎么编写wait和notify的功能呢。答案是使用Condition对象来实现wait和notify的功能。
+- 使用Condition时，引用的Condition对象必须从Lock实例的newCondition()返回，这样才能获得一个绑定了Lock实例的Condition实例。
+- Condition提供的await()、signal()、signalAll()原理和synchronized锁对象的wait()、notify()、notifyAll()是一致的，并且其行为也是一样的。
+
+    ```Java
+    public class TaskQueue {
+        private final Lock lock = new ReentrantLock();
+        private final Condition condition = this.lock.newCondition(); // 从Lock实例的newCondition()返回
+        Queue<String> queue = new LinkedList<>();
+
+        public void addTask(String s) {
+            this.lock.lock();
+            try {
+                this.queue.add(s);
+                this.condition.signalAll();
+            } finally {
+                this.lock.unlock();
+            }
+        }
+
+        public String getTask() throws InterruptedException {
+            this.lock.lock();
+            try {
+                while (this.queue.isEmpty())
+                    this.condition.await();
+                return this.queue.remove();
+            } finally {
+                this.lock.unlock();
+            }
+        }
+    }
+    ```
+
+- **此外，和tryLock()类似，await()可以在等待指定时间后，如果还没有被其它线程通过signal()或signalAll()唤醒，可以自己醒来。**
+
+    ```Java
+    if (condition.await(1, TimeUnit.SECOND)) {
+        // 被其它线程唤醒
+    } else {
+        // 指定时间内没有被其它线程唤醒
+    }
+    ```
+
+- 可见，使用Condition配合Lock，我们可以实现更灵活的线程同步。

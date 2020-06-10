@@ -106,7 +106,7 @@ class HTTPHandler extends Thread {
 
     ![servlet页面](.\image\servlet页面.jpg)
 
-- 为啥路径是/hello/而不是/。因为一个Web服务器允许同时运行多个Web App，而我们的Web App叫hello，因此，第一级目录/hello表示Web App的名字，后面的/才是我们在HelloServlet中映射的路径。
+- **为啥路径是/hello/而不是/。因为一个Web服务器允许同时运行多个Web App，而我们的Web App叫hello，因此，第一级目录/hello表示Web App的名字，后面的/才是我们在HelloServlet中映射的路径。**
 - 类似Tomcat这样的服务器也是Java编写的，启动Tomcat服务器实际上是启动Java虚拟机，执行Tomcat的main()方法，然后由Tomcat负责加载我们的.war文件，并创建一个HelloServlet实例，最后以多线程的模式来处理HTTP请求。如果Tomcat服务器收到的请求路径是/（假定部署文件为ROOT.war），就转发到HelloServlet并传入HttpServletRequest和HttpServletResponse两个对象。
 - 因为我们编写的Servlet并不是直接运行，而是由Web服务器加载后创建实例运行，所以，类似Tomcat这样的Web服务器也称为Servlet容器。
 - 在Servlet容器中运行的Servlet具有如下特点：无法在代码中直接通过new创建Servlet实例，必须由Servlet容器自动创建Servlet实例；Servlet容器只会给每个Servlet类创建**唯一实例**；Servlet容器会使用**多线程**执行doGet()或doPost()方法。
@@ -152,3 +152,81 @@ public class Main {
 ![方案](.\image\方案.jpg)
 
 ## Servlet进阶
+
+- 早期的Servlet需要在web.xml中配置映射路径，但最新Servlet版本只需要通过注解就可以完成映射。
+- 一个Webapp中的多个Servlet依靠路径映射来处理不同的请求；
+- 映射为/的Servlet可处理所有“未匹配”的请求；
+- 如何处理请求取决于Servlet覆写的对应方法；
+- Web服务器通过多线程处理HTTP请求，一个Servlet的处理方法可以由多线程并发执行。
+- 一个Servlet类在服务器中只有一个实例，但对于每个HTTP请求，Web服务器会使用多线程执行请求。因此，一个Servlet的doGet()、doPost()等处理请求的方法是多线程并发执行的。**如果Servlet中定义了字段**，要注意多线程并发访问的问题。
+- 对于每个请求，Web服务器会创建唯一的HttpServletRequest和HttpServletResponse实例，因此，HttpServletRequest和HttpServletResponse实例只有在当前处理线程中有效，它们总是局部变量，不存在多线程共享的问题。
+
+### 重定向与转发
+
+#### Redirect
+
+- 重定向是指当浏览器请求一个URL时，服务器返回一个重定向指令，告诉浏览器地址已经变了，麻烦使用新的URL再重新发送新请求。
+
+    ```Java
+    @WebServlet(urlPatterns = "/hi")
+    public class RedirectServlet extends HttpServlet {
+        @Override
+        protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
+            // 构造重定向路径
+            String name = req.getParameter("name");
+            String redirectToUrl = "/hello" + (name == null ? "" : "?name=" + name);
+            // 如果浏览器发送 GET /hi 请求，将发送一个重定向响应
+            resp.sendRedirect(redirectToUrl); // 临时重定向
+        }
+    }
+    ```
+
+    ![重定向响应](.\image\重定向响应.jpg)
+
+- 当浏览器收到302响应后，它会立刻根据Location的指示发送一个新的GET /hello请求，这个过程就是重定向。
+
+    ![重定向过程](.\image\重定向过程.jpg)
+
+- 可以观察到浏览器发送了两次HTTP请求，并且浏览器的地址栏路径自动更新为/hello。
+
+    ![传参重定向](.\image\传参重定向.jpg)
+
+- 重定向有两种：一种是302响应，称为临时重定向，一种是301响应，称为永久重定向。两者的区别是，如果服务器发送301永久重定向响应，浏览器会**缓存**/hi到/hello这个重定向的关联，下次请求/hi的时候，浏览器就直接发送/hello请求了。
+
+    ```Java
+    // 实现301永久重定向的做法
+    resp.setStatus(HttpServletResponse.SC_MOVED_PERMANENTLY);
+    resp.setHeader("Location", redirectToUrl);
+    ```
+
+- 当使用301永久重定向时的几个注意点：1.第一次访问的路径会被缓存，之后访问时在chrome浏览器中会显示该重定向来自缓存。2.启用301永久重定向时的所有访问路径都会被缓存，如果之后切换为302临时重定向，此时被缓存的路径仍然以301响应码进行返回，新的路径则以302响应码进行返回。3.如果想要禁止路径缓存，可以在chrome控制台中选择disable cache。
+
+    ![永久重定向](.\image\永久重定向.jpg)
+
+    ![永久重定向缓存](.\image\永久重定向缓存.jpg)
+
+- **重定向的目的是当Web应用升级后，如果请求路径发生了变化，可以将原来的路径重定向到新路径，从而避免浏览器请求原路径找不到资源。**
+
+#### Forward
+
+- Forward是指内部转发。当一个Servlet处理请求的时候，它可以决定自己不继续处理，而是转发给另一个Servlet处理。
+- **转发和重定向的区别在于，转发是在Web服务器内部完成的，对浏览器来说，它只发出了一个HTTP请求。**
+
+    ![转发](.\image\转发.jpg)
+
+    ```Java
+    @WebServlet(urlPatterns = "/morning")
+    public class ForwardServlet extends HttpServlet {
+        @Override
+        protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
+            // 把请求和响应都转发给路径为/hello的Servlet。
+            req.getRequestDispatcher("/hello").forward(req, resp);
+        }
+    }
+    ```
+
+- 注意到使用转发的时候，浏览器的地址栏路径仍然是/morning，浏览器并不知道该请求在Web服务器内部实际上做了一次转发。
+
+### 使用Session和Cookie
+
+- 在Web应用程序中，我们经常要跟踪用户身份。当一个用户登录成功后，如果他继续访问其他页面，Web程序如何才能识别出该用户身份。
