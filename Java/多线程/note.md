@@ -668,3 +668,105 @@ class TimerThread extends Thread {
     ```
 
 - 可见，使用Condition配合Lock，我们可以实现更灵活的线程同步。
+
+## 使用ReadWriteLock
+
+- ReentrantLock保证了只有一个线程可以执行临界区代码。
+- 如果我们想要的是：允许多个线程同时读，但只要有一个线程在写，其它线程就必须等待。
+- 使用ReadWriteLock可以解决这个问题，它保证：只允许一个线程写入（其它线程既不能写入也不能读取）；没有写入时，多个线程允许同时读（提高性能）。
+- 把读写操作分别用读锁和写锁来加锁，在读取时，多个线程可以同时获得读锁，这样就大大提高了并发读的执行效率。
+- 使用ReadWriteLock时，适用条件是**同一个数据，有大量线程读取，但仅有少数线程修改。**
+- 例如，一个论坛的帖子，回复可以看做写入操作，它是不频繁的，但是，浏览可以看做读取操作，是非常频繁的，这种情况就可以使用ReadWriteLock。
+- ReadWriteLock适合读多写少的场景。
+
+```Java
+public class Counter {
+    private final ReadWriteLock rwLock = new ReentrantReadWriteLock(); // 可重入的读写锁
+    private final Lock rLock = rwLock.readLock(); // 从同一个读写锁中派生出读锁
+    private final Lock wLock = rwLock.writeLock(); // 从同一个读写锁中派生出写锁
+    private int[] counts = new int[10];
+
+    public void inc(int index) {
+        wLock.lock();
+        try {
+            counts[index] += 1;
+        } finally {
+            wLock.unlock();
+        }
+    }
+
+    public int[] get() {
+        rLock.lock();
+        try {
+            return Arrays.copyOf(counts, counts.length);
+        } finally {
+            rLock.unlock();
+        }
+    }
+}
+```
+
+## 使用StampedLock
+
+- 深入分析ReadWriteLock，会发现它有个潜在的问题：如果有线程正在读，写线程需要等待读线程释放锁后才能获取写锁，**即读的过程中不允许写，这是一种悲观的读锁。**
+- StampedLock和ReadWriteLock相比，改进之处在于：读的过程中也允许获取写锁后写入！这样一来，**我们读的数据就可能不一致，所以，需要一点额外的代码来判断读的过程中是否有写入，这种读锁是一种乐观锁。**
+- **乐观锁的意思就是乐观地估计读的过程中大概率不会有写入，因此被称为乐观锁。反过来，悲观锁则是读的过程中拒绝有写入，也就是写入必须等待。显然乐观锁的并发效率更高，但一旦有小概率的写入导致读取的数据不一致，需要能检测出来，再读一遍就行。**
+
+```Java
+public class Point {
+    private final StampedLock stampedLock = new StampedLock();
+    private double x;
+    private double y;
+
+    public void move(double deltaX, double deltaY) {
+        long stamp = this.stampedLock.writeLock();
+        try {
+            this.x += deltaX;
+            this.y += deltaY;
+        } finally {
+            this.stampedLock.unlockWrite(stamp);
+        }
+    }
+
+    public double distanceFromOrigin() {
+        long stamp = this.stampedLock.tryOptimisticRead(); // 获得一个乐观读锁
+        // 注意下面两行代码不是原子操作
+        // 假设x,y = (100,200)
+        double currentX = this.x;
+        // 此处已读取到x=100，但x,y可能被写线程修改为(300,400)
+        double currentY = this.y;
+        // 此处已读取到y，如果没有写入，读取是正确的(100,200)
+        // 如果有写入，读取是错误的(100,400)
+        if (!this.stampedLock.validate(stamp)) { // 检查乐观读锁后是否有其它写锁发生
+            stamp = this.stampedLock.readLock(); // 获取一个悲观读锁
+            try {
+                currentX = this.x;
+                currentY = this.y;
+            } finally {
+                this.stampedLock.unlockRead(stamp); // 释放悲观读锁
+            }
+        }
+        return Math.sqrt(currentX * currentX + currentY * currentY);
+    }
+}
+```
+
+- 和ReadWriteLock相比，写入的加锁是完全一样的，不同的是读取。注意到首先我们通过tryOptimisticRead()获取一个乐观读锁，并返回版本号。接着进行读取，读取完成后，我们通过validate()去验证版本号，如果在读取过程中没有写入，版本号不变，验证成功，我们就可以放心地继续后续操作。如果在读取过程中有写入，版本号会发生变化，验证将失败。在失败的时候，我们再通过获取悲观读锁再次读取。由于写入的概率不高，程序在绝大部分情况下可以通过乐观读锁获取数据，极少数情况下使用悲观读锁获取数据。
+- 可见，StampedLock把读锁细分为乐观读和悲观读，能进一步提升并发效率。但这也是有代价的：**一是代码更加复杂，二是StampedLock是不可重入锁，不能在一个线程中反复获取同一个锁。**
+- StampedLock还提供了更复杂的将悲观读锁升级为写锁的功能，它主要使用在if-then-update的场景：即先读，如果读的数据满足条件，就返回，如果读的数据不满足条件，再尝试写。
+
+## 使用Concurrent集合
+
+- 使用java.util.concurrent包提供的线程安全的并发集合可以大大简化多线程编程；多线程同时读写并发集合是安全的；尽量使用Java标准库提供的并发集合，避免自己编写同步代码。
+- 使用这些并发集合与使用非线程安全的集合类完全相同。
+- 因为所有的同步和加锁的逻辑都在集合内部实现，对外部调用者来说，只需要正常按接口引用，其它代码和原来的非线程安全代码完全一样。
+
+    ```Java
+    Map<String, String> map = new HashMap<>();
+    // 需要多线程访问时，修改实例子类。
+    Map<String, String> map = new ConcurrentHashMap<>();
+    ```
+
+    ![并发集合](./image/并发集合.jpg)
+
+## 使用Atomic

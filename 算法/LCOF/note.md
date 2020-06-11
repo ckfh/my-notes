@@ -33,3 +33,17 @@ public String replaceSpace(String s) {
     return s.replace(" ", "%20");
 }
 ```
+
+## 06 从尾到头打印链表
+
+```Java
+public int[] reversePrint(ListNode head) {
+    int len = 0;
+    for (ListNode p = head; p != null; p = p.next)
+        len++;
+    int[] ans = new int[len];
+    for (ListNode p = head; p != null; p = p.next)
+        ans[--len] = p.val;
+    return ans;
+}
+```
