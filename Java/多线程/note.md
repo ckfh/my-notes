@@ -770,3 +770,21 @@ public class Point {
     ![并发集合](./image/并发集合.jpg)
 
 ## 使用Atomic
+
+- Java的java.util.concurrent包除了提供底层锁、并发集合外，还提供了一组原子操作的封装类，它们位于java.util.concurrent.atomic包。
+- 以AtomicInteger为例，它提供的主要操作有：增加值并返回新值：int addAndGet(int delta)；加1后返回新值：int incrementAndGet()；获取当前值：int get()。
+
+```Java
+// 利用AtomicLong可以编写一个多线程安全的全局唯一ID生成器
+// 例如在web开发当中准备一个计数器用于统计访客人数
+class IdGenerator {
+    AtomicLong var = new AtomicLong(0);
+
+    public long getNextId() {
+        return var.incrementAndGet();
+    }
+}
+```
+
+- 在高度竞争的情况下，还可以使用Java 8提供的LongAdder和LongAccumulator。
+- 使用java.util.concurrent.atomic提供的原子操作可以简化多线程编程：原子操作实现了无锁的线程安全；适用于计数器，累加器等。
