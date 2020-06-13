@@ -257,3 +257,71 @@ public class Main {
     > 有几个不同的浏览器发送请求至该服务器就会创建几个HttpSession对象，浏览器存储过cookie之后**再次访问相同的域名时**每次请求消息的消息头都会携带该cookie直至过期或被替换。  
     > 此后在servlet中多次调用req.getSession()时便会根据这个名为JSESSIONID的cookie到sessions中找到对应的HttpSession对象，于是开发者可以基于这个对象进行业务逻辑的编写。  
     > 服务器重启之后所有的会话对象都会消失，sessionID是由容器创建的。  
+
+- 实际上，Servlet提供的HttpSession本质上就是通过一个名为JSESSIONID的Cookie来跟踪用户会话的。除了这个名称外，其它名称的Cookie我们可以任意使用。
+
+    ```Java
+    @WebServlet(urlPatterns = "/pref")
+    public class LanguageServlet extends HttpServlet {
+        private final Set<String> LANGUAGES;
+
+        public LanguageServlet() {
+            this.LANGUAGES = new CopyOnWriteArraySet<>();
+            this.LANGUAGES.add("en");
+            this.LANGUAGES.add("zh");
+        }
+        // 当客户端访问/pref?lang=xx路径时，根据参数设置一个cookie记录用户选择的语言
+        @Override
+        protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
+            String lang = req.getParameter("lang");
+            if (this.LANGUAGES.contains(lang)) {
+                Cookie cookie = new Cookie("lang", lang);
+                // 设置生效范围
+                cookie.setPath("/");
+                // 设置有效日期
+                cookie.setMaxAge(8640000);
+                // 添加到响应当中
+                resp.addCookie(cookie);
+            }
+            resp.sendRedirect("/");
+        }
+    }
+    ```
+
+    ![自定义cookie](./image/自定义cookie.jpg)
+
+    ![携带自定义cookie](./image/携带自定义cookie.jpg)
+
+- 创建一个新Cookie时，除了指定名称和值以外，通常需要设置setPath("/")，浏览器根据此前缀决定是否发送Cookie。如果一个Cookie调用了setPath("/user/")，那么浏览器只有在请求以/user/开头的路径时才会附加此Cookie。通过setMaxAge()设置Cookie的有效期，单位为秒，最后通过resp.addCookie()把它添加到响应。
+- 如果访问的是https网页，还需要调用setSecure(true)，否则浏览器不会发送该Cookie。
+- 务必注意：浏览器在请求某个URL时，是否携带指定的Cookie，取决于Cookie是否满足以下所有要求：URL前缀是设置Cookie时的Path；Cookie在有效期内；Cookie设置了secure时必须以https访问。
+- 读取Cookie主要依靠遍历HttpServletRequest附带的所有Cookie。
+
+    ```Java
+    private String parseLanguageFromCookie(HttpServletRequest req) {
+        // 获取请求附带的所有Cookie
+        Cookie[] cookies = req.getCookies();
+        // 如果获取到Cookie
+        if (cookies != null) {
+            // 循环每个Cookie
+            for (Cookie cookie : cookies)
+                // 如果Cookie名称为lang
+                if (cookie.getName().equals("lang"))
+                    // 返回Cookie的值
+                    return cookie.getValue();
+        }
+        return "None";
+    }
+    ```
+
+## JSP开发
+
+- JSP是Java Server Pages的缩写，它的文件必须放到/src/main/webapp下，文件名必须以.jsp结尾，整个文件与HTML并无太大区别，但需要插入变量，或者动态输出的地方，使用特殊指令<% ... %>。
+- 整个JSP的内容实际上是一个HTML，但是稍有不同：包含在<%--和--%>之间的是JSP的注释，它们会被完全忽略；包含在<%和%>之间的是Java代码，可以编写任意Java代码；如果使用<%= xxx %>则可以快捷输出一个变量的值。
+- JSP页面内置了几个变量：out：表示HttpServletResponse的PrintWriter；session：表示当前HttpSession对象；request：表示HttpServletRequest对象。这几个变量可以直接使用。
+- 访问JSP页面时，可以直接指定完整路径进行访问。
+- JSP和Servlet有什么区别。其实它们没有任何区别，因为JSP在执行前首先被编译成一个Servlet。在Tomcat的临时目录下，可以找到一个hello_jsp.java的源文件，这个文件就是Tomcat把JSP自动转换成的Servlet源码。
+- 可见JSP本质上就是一个Servlet，只不过无需配置映射路径，Web Server会根据路径查找对应的.jsp文件，如果找到了，就自动编译成Servlet再执行。在服务器运行过程中，如果修改了JSP的内容，那么服务器会自动重新编译。
+- JSP是一种在HTML中嵌入动态输出的文件，它和Servlet正好相反，Servlet是在Java代码中嵌入输出HTML。
+
+## MVC开发
