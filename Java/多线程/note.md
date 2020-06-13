@@ -788,3 +788,86 @@ class IdGenerator {
 
 - 在高度竞争的情况下，还可以使用Java 8提供的LongAdder和LongAccumulator。
 - 使用java.util.concurrent.atomic提供的原子操作可以简化多线程编程：原子操作实现了无锁的线程安全；适用于计数器，累加器等。
+
+## 使用线程池
+
+- Java语言虽然内置了多线程支持，启动一个新线程非常方便，但是，创建线程需要操作系统资源（线程资源，栈空间等），频繁创建和销毁大量线程需要消耗大量时间。
+- 如果可以复用一组线程，那么我们就可以把很多小任务让一组线程来执行，而不是一个任务对应一个新线程。**这种能接收大量小任务并进行分发处理的就是线程池**。
+- 简单地说，线程池内部维护了若干个线程，没有任务的时候，这些线程都处于等待状态。如果有新任务，就分配一个空闲线程执行。如果所有线程都处于忙碌状态，新任务要么放入队列等待，要么增加一个新线程进行处理。
+- Java标准库提供了ExecutorService接口表示线程池，它的典型用法如下：
+
+    ```Java
+    // 创建固定大小的线程池:
+    ExecutorService executor = Executors.newFixedThreadPool(3);
+    // 提交任务:
+    executor.submit(task1);
+    executor.submit(task2);
+    executor.submit(task3);
+    executor.submit(task4);
+    executor.submit(task5);
+    ```
+
+- 因为ExecutorService只是接口，Java标准库提供的几个常用实现类有：FixedThreadPool：线程数固定的线程池；CachedThreadPool：线程数根据任务动态调整的线程池；SingleThreadExecutor：仅单线程执行的线程池。
+- 创建这些线程池的方法都被封装到Executors这个类中。
+
+    ```Java
+    ExecutorService es = Executors.newFixedThreadPool(4);
+    // 一次性放入6个任务，由于线程池只有固定的4个线程，因此，前4个任务会同时执行，等到有线程空闲后，才会执行后面2个任务。
+    // 如果我们把线程池改为CachedThreadPool，由于这个线程池的实现会根据任务数量动态调整线程池的大小，所以6个任务可一次性全部同时执行。
+    for (int i = 0; i < 6; i++) {
+        es.submit(new Task("" + i));
+    }
+    es.shutdown();
+    ```
+
+- **线程池在程序结束的时候要关闭**。使用shutdown()方法关闭线程池的时候，它会等待正在执行的任务先完成，然后再关闭。shutdownNow()会立刻停止正在执行的任务，awaitTermination()则会等待指定的时间让线程池关闭。
+- 如果我们想把线程池的大小限制在4～10个之间动态调整怎么办，我们查看Executors.newCachedThreadPool()方法的源码。
+
+    ```Java
+    public static ExecutorService newCachedThreadPool() {
+        return new ThreadPoolExecutor(0, Integer.MAX_VALUE,
+                                        60L, TimeUnit.SECONDS,
+                                        new SynchronousQueue<Runnable>());
+    }
+    // 想创建指定动态范围的线程池，可以这么写
+    int min = 4;
+    int max = 10;
+    ExecutorService es = new ThreadPoolExecutor(min, max,
+            60L, TimeUnit.SECONDS, new SynchronousQueue<Runnable>());
+    ```
+
+- 还有一种任务，需要定期反复执行，例如，每秒刷新证券价格。这种任务本身固定，需要反复执行的，可以使用ScheduledThreadPool。放入ScheduledThreadPool的任务可以定期反复执行。
+
+    ```Java
+    ScheduledExecutorService ses = Executors.newScheduledThreadPool(4);
+    // 1秒后执行一次性任务
+    ses.schedule(new Task("one-time"), 1, TimeUnit.SECONDS);
+    // 2秒后开始执行定时任务，每3秒执行
+    ses.scheduleAtFixedRate(new Task("fixed-rate"), 2, 3, TimeUnit.SECONDS);
+    // 2秒后开始执行定时任务，以3秒为间隔执行
+    ses.scheduleWithFixedDelay(new Task("fixed-delay"), 2, 3, TimeUnit.SECONDS);
+    ```
+
+- 注意FixedRate和FixedDelay的区别。**FixedRate是指任务总是以固定时间间隔触发，不管任务执行多长时间，而FixedDelay是指，上一次任务执行完毕后，等待固定的时间间隔，再执行下一次任务**。
+- 因此，使用ScheduledThreadPool时，我们要根据需要选择执行一次、FixedRate执行还是FixedDelay执行。
+- Java标准库还提供了一个java.util.Timer类，这个类也可以定期执行任务，但是，一个Timer会对应一个Thread，所以，一个Timer只能定期执行一个任务，多个定时任务必须启动多个Timer，而一个ScheduledThreadPool就可以调度多个定时任务，所以，**我们完全可以用ScheduledThreadPool取代旧的Timer**。
+- 如果任务抛出了异常，后续任务是否继续执行。The executor terminates, also resulting in task cancellation.
+- 在FixedRate模式下，假设每秒触发，如果某次任务执行时间超过1秒，后续任务会不会并发执行。If any execution of this task takes longer than its period, then subsequent executions may start late, but will not concurrently execute.
+
+## 使用Future
+
+- 在执行多个任务的时候，使用Java标准库提供的线程池是非常方便的。我们提交的任务只需要实现Runnable接口，就可以让线程池去执行。
+- Runnable接口有个问题，它的方法没有返回值。如果任务需要一个返回结果，那么只能保存到变量，还要提供额外的方法读取，非常不便。所以，Java标准库还提供了一个Callable接口，和Runnable接口比，它多了一个返回值。并且Callable接口是一个泛型接口，可以返回指定类型的结果。
+
+    ```Java
+    ExecutorService es = Executors.newFixedThreadPool(4);
+    // 提交一个实现Callable接口的线程并获得Future对象
+    Future<String> future = es.submit(new CallableTask());
+    // 从Future获取异步执行返回的结果，可能阻塞
+    String result = future.get();
+    System.out.println(result);
+    es.shutdown();
+    ```
+
+- 当我们提交一个Callable任务后，我们会同时获得一个Future对象，然后，我们在主线程某个时刻调用Future对象的get()方法，就可以获得异步执行的结果。**在调用get()时，如果异步任务已经完成，我们就直接获得结果。如果异步任务还没有完成，那么get()会阻塞，直到任务完成后才返回结果**。
+- 一个Future<V>接口表示一个未来可能会返回的结果，它定义的方法有：get()：获取结果（可能会等待）；get(long timeout, TimeUnit unit)：获取结果，但只等待指定的时间；cancel(boolean mayInterruptIfRunning)：取消当前任务；isDone()：判断任务是否已完成。

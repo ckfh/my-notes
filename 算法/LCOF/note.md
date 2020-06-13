@@ -82,3 +82,32 @@ public TreeNode buildTree(int[] preorder, int preorderStart, int preorderEnd, in
     }
 }
 ```
+
+## 09 用两个栈实现队列
+
+```Java
+class CQueue {
+
+    private final Deque<Integer> inStack;
+    private final Deque<Integer> outStack;
+
+    public CQueue() {
+        this.inStack = new LinkedList<>();
+        this.outStack = new LinkedList<>();
+    }
+
+    public void appendTail(int value) {
+        this.inStack.push(value);
+    }
+
+    public int deleteHead() {
+        if (this.outStack.isEmpty())
+            if (this.inStack.isEmpty())
+                return -1;
+            else
+                while (!this.inStack.isEmpty())
+                    this.outStack.push(this.inStack.pop());
+        return this.outStack.pop();
+    }
+}
+```
