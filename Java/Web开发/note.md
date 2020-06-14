@@ -238,7 +238,8 @@ public class Main {
     ![sessions](./image/sessions.jpg)
 
 - 而服务器识别Session的关键就是依靠一个名为JSESSIONID的Cookie。**在Servlet中第一次调用req.getSession()时**，Servlet容器自动创建一个Session ID，然后通过一个名为JSESSIONID的Cookie发送给浏览器。
-- 注意事项：JSESSIONID是由Servlet容器自动创建的，目的是维护一个浏览器会话，它和我们的登录逻辑没有关系；**登录和登出的业务逻辑是我们自己根据HttpSession是否存在一个"user"的Key判断的，登出后，Session ID并不会改变**；即使没有登录功能，仍然可以使用HttpSession追踪用户，例如，放入一些用户配置信息等。
+- 注意事项：**JSESSIONID是由Servlet容器自动创建的**，目的是维护一个浏览器会话，它和我们的登录逻辑没有关系；**登录和登出的业务逻辑是我们自己根据HttpSession是否存在一个"user"的Key判断的，登出后，Session ID并不会改变**；即使没有登录功能，仍然可以使用HttpSession追踪用户，例如，放入一些用户配置信息等。
+- 容器在其它情况下是否会创建JSESSIONID不是我们能够控制的，例如当你将请求和响应转发至JSP文件时，服务器同样会创建一个JSESSIONID发送给客户端。
 - 除了使用Cookie机制可以实现Session外，还可以通过隐藏表单、URL末尾附加ID来追踪Session。这些机制很少使用，最常用的Session机制仍然是Cookie。
 - 使用Session时，由于服务器把所有用户的Session都存储在内存中，如果遇到内存不足的情况，就需要把部分不活动的Session序列化到磁盘上，这会大大降低服务器的运行效率，因此，放入Session的对象要小，通常我们在value放入一个简单的User对象就足够了。
 
@@ -325,3 +326,53 @@ public class Main {
 - JSP是一种在HTML中嵌入动态输出的文件，它和Servlet正好相反，Servlet是在Java代码中嵌入输出HTML。
 
 ## MVC开发
+
+- Servlet适合编写Java代码，实现各种复杂的业务逻辑，但不适合输出复杂的HTML；JSP适合编写HTML，并在其中插入动态内容，但不适合编写复杂的Java代码。
+- 需要展示的User被放入HttpServletRequest中以便传递给JSP，因为**一个请求对应一个HttpServletRequest**，我们也无需清理它，处理完该请求后HttpServletRequest实例将被丢弃；
+- 把user.jsp放到/WEB-INF/目录下，是因为WEB-INF是一个特殊目录，Web Server会阻止浏览器对WEB-INF目录下任何资源的访问，这样就防止用户通过/user.jsp路径直接访问到JSP页面；
+- JSP页面首先从request变量获取User实例，然后在页面中直接输出，此处未考虑HTML的转义问题，有潜在安全风险。
+- 我们把UserServlet看作业务逻辑处理，把User看作模型，把user.jsp看作渲染，这种设计模式通常被称为MVC：Model-View-Controller，即UserServlet作为控制器（Controller），User作为模型（Model），user.jsp作为视图（View）。
+- 使用MVC模式的好处是，Controller专注于业务处理，它的处理结果就是Model。Model可以是一个JavaBean，也可以是一个包含多个对象的Map，Controller只负责把Model传递给View，View只负责把Model给“渲染”出来，这样，三者职责明确，且开发更简单，**因为开发Controller时无需关注页面，开发View时无需关心如何创建Model**。
+- MVC模式是一种分离**业务逻辑**和**显示逻辑**的设计模式，广泛应用在Web和桌面应用程序。
+
+## MVC高级开发
+
+- 直接把MVC搭在Servlet和JSP之上还是不太好：**Servlet提供的接口仍然偏底层**，需要实现Servlet调用相关接口；JSP对页面开发不友好，更好的替代品是**模板引擎**；**业务逻辑最好由纯粹的Java类实现**，而不是强迫继承自Servlet。
+- 最早的开发是从套接字的通讯流分别获取输入流和输出流，从输入流中分析出完整的请求消息，书写完整的响应消息到输出流中完成一次开发。后来有了servlet-api包，它在底层分别封装了输入流和输出流为request对象和response对象，我们通过在这两个对象上调用各种现成的方法来进行开发。
+- 一个MVC框架是**基于Servlet基础抽象出更高级的接口**，使得上层基于MVC框架的开发可以**不涉及Servlet相关的HttpServletRequest等接口**，处理多个请求更加灵活，并且可以使用任意模板引擎，不必使用JSP。
+- 能不能通过普通的Java类实现MVC的Controller。
+
+    ```Java
+    public class UserController {
+        // 如果是GET请求，我们希望MVC框架能直接把URL参数按方法参数对应起来然后传入。
+        @GetMapping("/hello")
+        public ModelAndView hello(String name) {
+            ...
+        }
+        // 如果是POST请求，我们希望MVC框架能直接把Post参数变成一个JavaBean后通过方法参数传入。
+        @PostMapping("/signin")
+        public ModelAndView doSignin(SignInBean bean) {
+            ...
+        }
+        // 为了增加灵活性，如果Controller的方法在处理请求时需要访问HttpServletRequest、HttpServletResponse、HttpSession这些实例时，只要方法参数有定义，就可以自动传入。
+        @GetMapping("/signout")
+        public ModelAndView signout(HttpSession session) {
+            ...
+        }
+    }
+    ```
+
+- 在上文中，我们已经定义了上层代码编写Controller的一切接口信息，并且并不要求实现特定接口，只需返回ModelAndView对象，该对象包含一个View和一个Model。实际上View就是模板的路径，而Model可以用一个`Map<String, Object>`表示，因此，ModelAndView定义非常简单。
+
+    ```Java
+    public class ModelAndView {
+        Map<String, Object> model;
+        String view;
+    }
+    ```
+
+- 比较复杂的是我们需要在MVC框架中**创建一个接收所有请求的Servlet**，通常我们把它命名为DispatcherServlet，它总是映射到/，然后，**根据不同的Controller的方法定义的@Get或@Post的Path决定调用哪个方法**，最后，获得方法返回的ModelAndView后，渲染模板，写入HttpServletResponse，即完成了整个MVC的处理。
+
+    ![MVC架构](./image/MVC架构.jpg)
+
+- 其中，DispatcherServlet以及如何渲染均由MVC框架实现，**在MVC框架之上只需要编写每一个Controller**。

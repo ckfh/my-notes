@@ -86,28 +86,65 @@ public TreeNode buildTree(int[] preorder, int preorderStart, int preorderEnd, in
 ## 09 用两个栈实现队列
 
 ```Java
-class CQueue {
-
+public class CQueue {
     private final Deque<Integer> inStack;
     private final Deque<Integer> outStack;
 
     public CQueue() {
-        this.inStack = new LinkedList<>();
-        this.outStack = new LinkedList<>();
+        this.inStack = new ArrayDeque<>();
+        this.outStack = new ArrayDeque<>();
+    }
+
+    private void inToOut() {
+        if (this.outStack.isEmpty())
+            while (!this.inStack.isEmpty())
+                this.outStack.push(this.inStack.pop());
     }
 
     public void appendTail(int value) {
         this.inStack.push(value);
+        this.inToOut();
     }
 
     public int deleteHead() {
-        if (this.outStack.isEmpty())
-            if (this.inStack.isEmpty())
-                return -1;
-            else
-                while (!this.inStack.isEmpty())
-                    this.outStack.push(this.inStack.pop());
+        if (this.outStack.isEmpty() && this.inStack.isEmpty())
+            return -1;
+        this.inToOut();
         return this.outStack.pop();
     }
+}
+```
+
+## 10.1 斐波那契数列
+
+```Java
+public int fib(int n) {
+    if (n == 0)
+        return 0;
+    int first = 1;
+    int second = 1;
+    for (int i = 2; i < n; i++) {
+        int third = first + second;
+        first = second;
+        second = third % 1000000007;
+    }
+    return second;
+}
+```
+
+## 10.2 青蛙跳台阶问题
+
+```Java
+public int numWays(int n) {
+    if (n == 0)
+        return 1;
+    int first = 1;
+    int second = 1;
+    for (int i = 2; i <= n; i++) {
+        int third = first + second;
+        first = second;
+        second = third % 1000000007;
+    }
+    return second;
 }
 ```
