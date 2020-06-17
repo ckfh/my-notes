@@ -4,17 +4,10 @@
 
 ## Class类
 
-- 仔细思考，我们可以得出结论：class（包括interface）的本质是数据类型（Type）。无继承关系的数据类型无法赋值。
+- class（包括interface）的本质是**数据类型**（Type）。无继承关系的数据类型无法赋值。
 - 而class是由JVM在执行过程中动态加载的。JVM在第一次读取到一种class类型时，将其加载进内存。
 - 每加载一种class，JVM就为其创建一个Class类型的实例，并关联起来。注意：这里的Class类型是一个名叫Class的class。
-
-    ```Java
-    public final class Class {
-        private Class() {}
-    }
-    ```
-
-- 以String类为例，当JVM加载String类时，它首先读取String.class文件到内存，然后，为String类创建一个Class实例并关联起来。
+- 以String类为例，当JVM加载String类时，它首先读取String.class字节码文件到内存，然后，为String类创建一个Class实例并关联起来。
 
     ```Java
     Class cls = new Class(String);
@@ -29,7 +22,7 @@
 
     ![完整信息](./image/完整信息.jpg)
 
-- **由于JVM为每个加载的class创建了对应的Class实例**，并在实例中保存了该class的所有信息，包括类名、包名、父类、实现的接口、所有方法、字段等，因此，如果获取了某个Class实例，我们就可以通过这个Class实例获取到该实例对应的class的所有信息。**是获取已经被定义好的class信息，不是获取实例化后的对象信息**。
+- **由于JVM为每个加载的class创建了对应的Class实例**，并在实例中保存了该class的所有信息，包括类名、包名、父类、实现的接口、所有方法、字段等，因此，如果获取了某个Class实例，我们就可以通过这个Class实例获取到该实例对应的class的所有信息。
 - **这种通过Class实例获取class信息的方法称为反射（Reflection）**。
 
     ```Java
@@ -42,8 +35,8 @@
     Class cls = Class.forName("java.lang.String");
     ```
 
-- **因为Class实例在JVM中是唯一的**，所以，上述方法获取的Class实例是同一个实例。可以用==比较两个Class实例。
-- 用instanceof不但匹配指定类型，还匹配指定类型的子类。而用==判断class实例可以精确地判断数据类型，但不能作子类型比较。
+- **因为Class实例在JVM中是唯一的（每一个完整类名都是唯一的）**，所以，上述方法获取的Class实例是同一个实例。可以用==比较两个Class实例。
+- 用instanceof不但匹配指定类型，还匹配指定类型的子类。而用==判断class实例可以精确地判断**数据类型**，但不能作子类型比较。
 - **通常情况下，我们应该用instanceof判断数据类型，因为面向抽象编程的时候，我们不关心具体的子类型**。只有在需要精确判断一个类型是不是某个class的时候，我们才使用==判断class实例。
 - 因为反射的目的是为了获得某个实例的信息。因此，当我们拿到某个Object实例时，我们可以通过反射获取该Object的class信息。
 
@@ -79,7 +72,7 @@
     ```
 
 - 上述代码相当于new String()。通过Class.newInstance()可以创建类实例，它的局限是：**只能调用public的无参数构造方法**。带参数的构造方法，或者非public的构造方法都无法通过Class.newInstance()被调用。
-- JVM在执行Java程序的时候，并不是一次性把所有用到的class全部加载到内存，而是第一次需要用到class时才加载。这就是JVM**动态加载**class的特性。。
+- **JVM在执行Java程序的时候，并不是一次性把所有用到的class全部加载到内存，而是第一次需要用到class时才加载。这就是JVM动态加载class的特性**。
 - 动态加载class的特性对于Java程序非常重要。利用JVM动态加载class的特性，我们才能在**运行期**根据条件加载不同的实现类。例如，Commons Logging总是优先使用Log4j，只有当Log4j不存在时，才使用JDK的logging。这就是为什么我们只需要把Log4j的jar包放到classpath中，Commons Logging就会自动使用Log4j的原因。
 
     ```Java
@@ -105,9 +98,9 @@
 ## 访问字段
 
 - Field getField(name)：根据字段名获取某个**public**的field（包括父类）。
-- Field getDeclaredField(name)：根据字段名获取当前类的某个field（不包括父类）。
+- Field getDeclaredField(name)：根据字段名获取当前类的某个显式field（不包括父类）。**子类的private字段Field对象也可以被获取，父类的private字段本身没有被继承**。
 - Field[] getFields()：获取所有**public**的field（包括父类）。
-- Field[] getDeclaredFields()：获取当前类的所有field（不包括父类）。
+- Field[] getDeclaredFields()：获取当前类的所有显式field（不包括父类）。
 
     ```Java
     public class Person {
@@ -119,11 +112,11 @@
     }
     public static void main(String[] args) throws NoSuchFieldException {
         Class stdClass = Student.class;                         // 获取Student的Class实例
-        System.out.println(stdClass.getField("score"));         // 获取public字段
-        System.out.println(stdClass.getField("name"));          // 获取继承的public字段
-        System.out.println(stdClass.getDeclaredField("grade")); // 获取private字段
+        System.out.println(stdClass.getField("score"));         // 获取public字段Field对象
+        System.out.println(stdClass.getField("name"));          // 获取继承的public字段Field对象
+        System.out.println(stdClass.getDeclaredField("grade")); // 获取private字段Field对象
         /*
-        * 修饰符/数据类型/完整字段名
+        * 修饰符/字段数据类型/完整字段名
         * public int com.cat.reflection.Student.score
         * public java.lang.String com.cat.reflection.Person.name
         * private int com.cat.reflection.Student.grade
@@ -164,17 +157,17 @@
 ## 调用方法
 
 - Method getMethod(name, Class...)：获取某个**public**的Method（包括父类）。
-- Method getDeclaredMethod(name, Class...)：获取当前类的某个Method（不包括父类）。
+- Method getDeclaredMethod(name, Class...)：获取当前类的某个显式Method（不包括父类）。
 - Method[] getMethods()：获取所有**public**的Method（包括父类）。
-- Method[] getDeclaredMethods()：获取当前类的所有Method（不包括父类）。
+- Method[] getDeclaredMethods()：获取当前类的所有显式Method（不包括父类）。
 
     ```Java
     Class stdClass = Student.class;
-    System.out.println(stdClass.getMethod("getScore", String.class));      // 获取public方法，根据后面所跟的可变数组确定参数类型及个数来确定具体方法
-    System.out.println(stdClass.getMethod("getName"));                     // 获取继承的public方法
-    System.out.println(stdClass.getDeclaredMethod("getGrade", int.class)); // 获取private方法
+    System.out.println(stdClass.getMethod("getScore", String.class));      // 获取public方法Method对象，根据后面所跟的可变数组确定参数类型及个数来区分不同方法
+    System.out.println(stdClass.getMethod("getName"));                     // 获取继承的public方法Method对象
+    System.out.println(stdClass.getDeclaredMethod("getGrade", int.class)); // 获取private方法Method对象
     /*
-     * 修饰符/返回值类型/完整方法名/参数列表
+     * 修饰符/返回值数据类型/完整方法名/参数类型列表
      * public int com.cat.reflection.Student.getScore(java.lang.String)
      * public java.lang.String com.cat.reflection.Person.getName()
      * private int com.cat.reflection.Student.getGrade(int)
@@ -187,30 +180,27 @@
 - getModifiers()：返回方法的修饰符，它是一个int，不同的bit表示不同的含义。
 
     ```Java
-    // 通过反射调用普通方法
+    // 通过反射调用实例方法
     String s = "Hello, World!";
-    Method m = String.class.getMethod("substring", int.class); // 根据参数名称以及参数列表获取Method对象
+    Method m = String.class.getMethod("substring", int.class); // 根据方法名称以及参数列表获取Method对象
     String r = (String) m.invoke(s, 6);                        // 对Method实例调用invoke就相当于调用该方法，第一个参数是对象实例，后面是与方法参数一致的可变参数
-    System.out.println(r);
     ```
 
     ```Java
     // 通过反射调用静态方法
     Method m = Integer.class.getMethod("parseInt", String.class);
-    Integer n = (Integer) m.invoke(null, "12345");             // 调用静态方法无需指定实例对象，因此第一个参数为null
-    System.out.println(n);
+    Integer n = (Integer) m.invoke(null, "12345");             // 静态方法不需要实例对象，因此第一个参数为null
     ```
 
     ```Java
-    // 通过反射调用非public方法
+    // 通过反射调用private方法
     Person p = new Person();
     Method m = p.getClass().getDeclaredMethod("setName", String.class);
     m.setAccessible(true);
     m.invoke(p, "Bob");
-    System.out.println(p.name);
     ```
 
-- 使用反射调用方法时，仍然**遵循多态原则**：即总是调用实际类型的覆写方法（如果存在）。
+- 使用反射调用方法时，仍然**遵循多态原则**：即总是调用**实际类型**的覆写方法（如果存在）。
 
 ## 调用构造方法
 
@@ -231,7 +221,7 @@
 - getDeclaredConstructor(Class...)：获取某个Constructor。
 - getConstructors()：获取所有**public**的Constructor。
 - getDeclaredConstructors()：获取所有Constructor。
-- 注意Constructor总是当前类定义的构造方法，和父类无关，因此不存在多态的问题。
+- 注意Constructor只包含**当前类定义的构造方法**，和父类无关，因此不存在多态的问题。
 - 调用非public的Constructor时，必须首先通过setAccessible(true)设置允许访问。setAccessible(true)可能会失败。
 
 ## 获取继承关系
@@ -240,19 +230,12 @@
 // 获取父类的Class
 Class i = Integer.class;
 Class n = i.getSuperclass();
-System.out.println(n);
-Class o = n.getSuperclass();
-System.out.println(o);
-System.out.println(o.getSuperclass());
 ```
 
 ```Java
-// 获取父接口
+// 获取父接口的Class，可能含有多个父接口
 Class s = Integer.class;
 Class[] is = s.getInterfaces(); // 只返回当前类直接实现的接口类型，并不包括其父类实现的接口类型
-for (Class i : is) {
-    System.out.println(i);
-}
 ```
 
 - 对所有interface的Class调用getSuperclass()返回的是null，**获取接口的父接口**要用getInterfaces()
@@ -262,9 +245,10 @@ for (Class i : is) {
 Object n = Integer.valueOf(123);
 boolean isDouble = n instanceof Double; // false
 boolean isInteger = n instanceof Integer; // true
-boolean isNumber = n instanceof Number; // true
+boolean isNumber = n instanceof Number; // true，可向上转型
 boolean isSerializable = n instanceof java.io.Serializable; // true
-// 如果是两个Class实例，要判断一个向上转型是否成立，可以调用isAssignableFrom()
+
+// 如果是两个Class实例，要判断一个向上转型是否成立，可以调用isAssignableFrom()来代替instanceof
 // Integer i = ?
 Integer.class.isAssignableFrom(Integer.class); // true，因为Integer可以赋值给Integer
 // Number n = ?
@@ -291,12 +275,12 @@ Integer.class.isAssignableFrom(Number.class); // false，因为Number不能赋�
             System.out.println("Good morning, " + name);
         }
     }
-    // 创建实例，转型为接口并调用
+    // 创建实例，向上转型为接口并调用方法
     Hello hello = new HelloWorld();
     hello.morning("Bob");
     ```
 
-- 还有一种方式是动态代码，我们仍然先定义了接口Hello，但是我们并不去编写实现类，而是直接通过JDK提供的一个Proxy.newProxyInstance()创建了一个Hello接口对象。**这种没有实现类但是在运行期动态创建了一个接口对象的方式，我们称为动态代码**。JDK提供的动态创建接口对象的方式，就叫动态代理。
+- 还有一种方式是动态代理，我们仍然先定义了接口Hello，但是我们并不去编写实现类，而是直接通过JDK提供的一个Proxy.newProxyInstance()创建了一个Hello接口对象。**这种没有实现类但是在运行期动态创建了一个接口对象的方式，我们称为动态代理**。JDK提供的动态创建接口对象的方式，就叫动态代理。
 
     ```Java
     public interface Hello {
@@ -304,9 +288,11 @@ Integer.class.isAssignableFrom(Number.class); // false，因为Number不能赋�
     }
 
     public static void main(String[] args) {
-        // 匿名内部类，说白了就是一个子类
-        // 定义一个InvocationHandler实例，它负责实现接口的方法调用
         InvocationHandler handler = new InvocationHandler() {
+            /*
+             * Processes a method invocation on a proxy instance and returns the result.
+             * This method will be invoked on an invocation handler when a method is invoked on a proxy instance that it is associated with.
+             */
             @Override
             public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
                 System.out.println(method);
@@ -315,35 +301,35 @@ Integer.class.isAssignableFrom(Number.class); // false，因为Number不能赋�
                 return null;
             }
         };
-        // 通过Proxy.newProxyInstance()创建interface实例，它需要3个参数：
-        // 1.使用的ClassLoader，通常就是接口类的ClassLoader
-        // 2.需要实现的接口数组，至少需要传入一个接口进去
-        // 3.用来处理接口方法调用的InvocationHandler实例
-        // 将返回的Object强制转型为接口
+
         Hello hello = (Hello) Proxy.newProxyInstance(
                 Hello.class.getClassLoader(),
                 new Class[]{Hello.class},
                 handler
         );
+
         hello.morning("Bob");
     }
     ```
 
-- 动态代理实际上是JDK在运行期动态创建class字节码并加载的过程，它并没有什么黑魔法，把上面的动态代理改写为静态实现类大概长这样。
+- 动态代理实际上是JDK在运行期动态创建class字节码并加载的**过程**，它并没有什么黑魔法，把上面的动态代理改写为静态实现类大概长这样。
 
     ```Java
     public class HelloDynamicProxy implements Hello {
         InvocationHandler handler;
+
         public HelloDynamicProxy(InvocationHandler handler) {
             this.handler = handler;
         }
+
+        @Override
         public void morning(String name) {
-            handler.invoke(
-            this,
-            Hello.class.getMethod("morning"),
-            new Object[] { name });
+            this.handler.invoke(
+                    this,
+                    Hello.class.getMethod("morning", String.class)),
+                    new Object[]{name};
         }
     }
     ```
 
-- 其实就是JDK帮我们自动编写了一个上述类（不需要源码，可以直接生成字节码），**并不存在可以直接实例化接口的黑魔法**。
+- 其实就是JDK帮我们**自动编写**了一个上述类（不需要源码，可以直接生成字节码），**并不存在可以直接实例化接口的黑魔法**。
