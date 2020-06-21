@@ -86,7 +86,7 @@ class HTTPHandler extends Thread {
 
 - 在JavaEE平台上，处理TCP连接，解析HTTP协议这些底层工作统统扔给现成的Web服务器去做，我们只需要把自己的应用程序跑在Web服务器上。为了实现这一目的，JavaEE提供了Servlet API，我们使用Servlet API编写自己的Servlet来处理HTTP请求，Web服务器实现Servlet API接口，实现底层功能。  
     ![过程](.\image\过程.jpg)
-- 编写Web应用程序就是编写Servlet处理HTTP请求；Servlet API提供了HttpServletRequest和HttpServletResponse两个高级接口来封装HTTP请求和响应；Web应用程序必须按固定结构组织并打包为.war文件；需要启动Web服务器来加载我们的war包来运行Servlet。
+- 编写Web应用程序就是编写Servlet处理HTTP请求；Servlet API提供了HttpServletRequest和HttpServletResponse两个高级接口来封装HTTP请求和响应；Web应用程序必须按**固定结构**组织并打包为.war文件；需要启动Web服务器来加载我们的war包来运行Servlet。
 - 一个Servlet总是继承自HttpServlet，然后覆写doGet()或doPost()方法。注意到doGet()方法传入了HttpServletRequest和HttpServletResponse两个对象，分别代表HTTP请求和响应。我们使用Servlet API时，并不直接与底层TCP交互，也不需要解析HTTP协议，因为HttpServletRequest和HttpServletResponse就已经封装好了请求和响应。以发送响应为例，我们只需要设置正确的响应类型，然后获取PrintWriter，写入响应即可。
 
     ```Java
@@ -95,9 +95,9 @@ class HTTPHandler extends Thread {
         @Override
         protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
             LocalTime t = LocalTime.now();
-            resp.setContentType("text/html"); // 设置响应类型
+            resp.setContentType("text/html"); // 设置消息体类型
             PrintWriter pw = resp.getWriter(); // 获取输出流
-            pw.println("<h1>Hello, World!</h1>"); // 写入响应
+            pw.println("<h1>Hello, World!</h1>"); // 写入消息体
             pw.print("<h1>" + t + "</h1>");
             pw.flush(); // 强制输出
         }
@@ -110,7 +110,7 @@ class HTTPHandler extends Thread {
 - 类似Tomcat这样的服务器也是Java编写的，启动Tomcat服务器实际上是启动Java虚拟机，执行Tomcat的main()方法，然后由Tomcat负责加载我们的.war文件，并创建一个HelloServlet实例，最后以多线程的模式来处理HTTP请求。如果Tomcat服务器收到的请求路径是/（假定部署文件为ROOT.war），就转发到HelloServlet并传入HttpServletRequest和HttpServletResponse两个对象。
 - 因为我们编写的Servlet并不是直接运行，而是由Web服务器加载后创建实例运行，所以，类似Tomcat这样的Web服务器也称为Servlet容器。
 - 在Servlet容器中运行的Servlet具有如下特点：无法在代码中直接通过new创建Servlet实例，必须由Servlet容器自动创建Servlet实例；Servlet容器只会给每个Servlet类创建**唯一实例**；Servlet容器会使用**多线程**执行doGet()或doPost()方法。
-- 因此，在Servlet中定义的**实例变量**会被多个线程同时访问，要注意线程安全；HttpServletRequest和HttpServletResponse实例是由Servlet容器传入的局部变量，它们只能被当前线程访问，不存在多个线程访问的问题；在doGet()或doPost()方法中，如果使用了ThreadLocal，但没有清理，那么它的状态很可能会影响到下次的某个请求，因为Servlet容器很可能用线程池实现线程复用。
+- 因此，在Servlet中定义的**实例变量**会被多个线程同时访问，要注意线程安全；**HttpServletRequest和HttpServletResponse实例是由Servlet容器传入的局部变量，它们只能被当前线程访问，不存在多个线程访问的问题**；在doGet()或doPost()方法中，如果使用了ThreadLocal，但没有清理，那么它的状态很可能会影响到下次的某个请求，因为Servlet容器很可能用线程池实现线程复用。
 - 正确编写Servlet，要清晰理解Java的多线程模型，需要同步访问的必须同步。
 
 ### 小结
@@ -155,11 +155,11 @@ public class Main {
 
 - 早期的Servlet需要在web.xml中配置映射路径，但最新Servlet版本只需要通过注解就可以完成映射。
 - 一个Webapp中的多个Servlet依靠路径映射来处理不同的请求；
-- 映射为/的Servlet可处理所有“未匹配”的请求；
+- **映射为/的Servlet可处理所有“未匹配”的请求**；
 - 如何处理请求取决于Servlet覆写的对应方法；
-- Web服务器通过多线程处理HTTP请求，一个Servlet的处理方法可以由多线程并发执行。
+- Web服务器通过多线程处理HTTP请求，**一个Servlet的处理方法可以由多线程并发执行**。
 - 一个Servlet类在服务器中只有一个实例，但对于每个HTTP请求，Web服务器会使用多线程执行请求。因此，一个Servlet的doGet()、doPost()等处理请求的方法是多线程并发执行的。**如果Servlet中定义了字段**，要注意多线程并发访问的问题。
-- 对于每个请求，Web服务器会创建唯一的HttpServletRequest和HttpServletResponse实例，因此，HttpServletRequest和HttpServletResponse实例只有在当前处理线程中有效，它们总是局部变量，不存在多线程共享的问题。
+- **对于每个请求，Web服务器会创建唯一的HttpServletRequest和HttpServletResponse实例，因此，HttpServletRequest和HttpServletResponse实例只有在当前处理线程中有效，它们总是局部变量，不存在多线程共享的问题**。
 
 ### 重定向与转发
 
@@ -199,7 +199,7 @@ public class Main {
     resp.setHeader("Location", redirectToUrl);
     ```
 
-- 当使用301永久重定向时的几个注意点：1.第一次访问的路径会被缓存，之后访问时在chrome浏览器中会显示该重定向来自缓存。2.启用301永久重定向时的所有访问路径都会被缓存，如果之后切换为302临时重定向，此时被缓存的路径仍然以301响应码进行返回，新的路径则以302响应码进行返回。3.如果想要禁止路径缓存，可以在chrome控制台中选择disable cache。
+- 当使用301永久重定向时的几个注意点：1.第一次访问的路径会被缓存，再次访问时控制台会显示该重定向来自缓存。2.启用301永久重定向时的所有访问路径都会被缓存，如果之后切换为302临时重定向，此时被缓存的路径仍然以301响应码进行返回，新的路径则以302响应码进行返回。3.如果想要禁止路径缓存，可以在控制台中选择disable cache。
 
     ![永久重定向](.\image\永久重定向.jpg)
 
@@ -219,7 +219,7 @@ public class Main {
     public class ForwardServlet extends HttpServlet {
         @Override
         protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
-            // 把请求和响应都转发给路径为/hello的Servlet。
+            // 把请求和响应都转发给映射路径为/hello的Servlet。
             req.getRequestDispatcher("/hello").forward(req, resp);
         }
     }
@@ -230,7 +230,8 @@ public class Main {
 ### 使用Session和Cookie
 
 - 在Web应用程序中，我们经常要跟踪用户身份。当一个用户登录成功后，如果他继续访问其它页面，Web程序如何才能识别出该用户身份。
-- 因为HTTP协议是一个无状态协议，即Web应用程序无法区分收到的两个HTTP请求是否是**同一个浏览器（即使通过无痕方式）**发出的。为了跟踪用户状态，服务器可以向浏览器分配一个唯一ID，并以Cookie的**形式**发送到浏览器，浏览器在后续访问时总是附带此Cookie，这样，服务器就可以识别用户身份。
+- 因为HTTP协议是一个无状态协议，即Web应用程序无法区分收到的两个HTTP请求是否是**同一个浏览器**发出的。为了跟踪用户状态，服务器可以向浏览器分配一个唯一ID，并以Cookie的**形式**发送到浏览器，浏览器在后续访问时总是附带此Cookie，这样，服务器就可以识别用户身份。
+- 会向本地的Chrome和Edge分配两个ID，但不会给Chrome和Chrome无痕模式分配两个ID，即无痕模式不能当作是一个新的客户端。
 - 我们把这种基于唯一ID识别用户身份的**机制**称为Session。每个用户第一次访问服务器后，会自动获得一个Session ID。如果用户在一段时间内没有访问服务器，那么Session会自动失效，下次即使带着上次分配的Session ID访问，服务器也认为这是一个新用户，会分配新的Session ID。
 - stackoverflow上有关session和cookie关系的回答：[参考链接](https://stackoverflow.com/questions/32563236/relation-between-sessions-and-cookies)
 - 对于Web应用程序来说，我们总是通过HttpSession这个高级接口访问当前Session。如果要深入理解Session原理，**可以认为Web服务器在内存中自动维护了一个ID到HttpSession的映射表**。
@@ -295,7 +296,7 @@ public class Main {
 
 - 创建一个新Cookie时，除了指定名称和值以外，通常需要设置setPath("/")，浏览器根据此前缀决定是否发送Cookie。如果一个Cookie调用了setPath("/user/")，那么浏览器只有在请求以/user/开头的路径时才会附加此Cookie。通过setMaxAge()设置Cookie的有效期，单位为秒，最后通过resp.addCookie()把它添加到响应。
 - 如果访问的是https网页，还需要调用setSecure(true)，否则浏览器不会发送该Cookie。
-- 务必注意：浏览器在请求某个URL时，是否携带指定的Cookie，取决于Cookie是否满足以下所有要求：URL前缀是设置Cookie时的Path；Cookie在有效期内；Cookie设置了secure时必须以https访问。
+- 务必注意：**浏览器在请求某个URL时，是否携带指定的Cookie，取决于Cookie是否满足以下所有要求：URL前缀是设置Cookie时的Path；Cookie在有效期内；Cookie设置了secure时必须以https访问**。
 - 读取Cookie主要依靠遍历HttpServletRequest附带的所有Cookie。
 
     ```Java
@@ -329,7 +330,7 @@ public class Main {
 
 - Servlet适合编写Java代码，实现各种复杂的业务逻辑，但不适合输出复杂的HTML；JSP适合编写HTML，并在其中插入动态内容，但不适合编写复杂的Java代码。
 - 需要展示的User被放入HttpServletRequest中以便传递给JSP，因为**一个请求对应一个HttpServletRequest**，我们也无需清理它，处理完该请求后HttpServletRequest实例将被丢弃；
-- 把user.jsp放到/WEB-INF/目录下，是因为WEB-INF是一个特殊目录，Web Server会阻止浏览器对WEB-INF目录下任何资源的访问，这样就防止用户通过/user.jsp路径直接访问到JSP页面；
+- **把user.jsp放到/WEB-INF/目录下，是因为WEB-INF是一个特殊目录，Web Server会阻止浏览器对WEB-INF目录下任何资源的访问，这样就防止用户通过/user.jsp路径直接访问到JSP页面**；
 - JSP页面首先从request变量获取User实例，然后在页面中直接输出，此处未考虑HTML的转义问题，有潜在安全风险。
 - 我们把UserServlet看作业务逻辑处理，把User看作模型，把user.jsp看作渲染，这种设计模式通常被称为MVC：Model-View-Controller，即UserServlet作为控制器（Controller），User作为模型（Model），user.jsp作为视图（View）。
 - 使用MVC模式的好处是，Controller专注于业务处理，它的处理结果就是Model。Model可以是一个JavaBean，也可以是一个包含多个对象的Map，Controller只负责把Model传递给View，View只负责把Model给“渲染”出来，这样，三者职责明确，且开发更简单，**因为开发Controller时无需关注页面，开发View时无需关心如何创建Model**。

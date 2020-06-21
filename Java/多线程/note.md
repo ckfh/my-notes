@@ -69,6 +69,7 @@ class MyRunnable implements Runnable {
 
 - 程序本身无法确定线程的调度顺序。
 - 直接调用run()方法，相当于调用了一个普通的Java方法，当前线程并没有任何改变，也不会启动新线程。
+- **如果需要传参进行处理，可以选择给线程子类定义实例字段及有参构造方法，然后在run()方法中调用处理**。
 - 必须调用Thread实例的start()方法才能启动新线程，如果我们查看Thread类的源代码，会看到start()方法内部调用了一个private native void start0()方法，**native修饰符**表示这个方法是由JVM虚拟机内部的C代码实现的，不是由Java代码实现的。
 - 一个线程对象只能调用一次start()方法。
 - 可以对线程设定优先级，优先级高的线程被操作系统调度的优先级较高，操作系统对高优先级线程可能调度更频繁，但我们决不能通过设置优先级来确保高优先级的线程一定会先执行。
@@ -870,4 +871,311 @@ class IdGenerator {
     ```
 
 - 当我们提交一个Callable任务后，我们会同时获得一个Future对象，然后，我们在主线程某个时刻调用Future对象的get()方法，就可以获得异步执行的结果。**在调用get()时，如果异步任务已经完成，我们就直接获得结果。如果异步任务还没有完成，那么get()会阻塞，直到任务完成后才返回结果**。
-- 一个Future<V>接口表示一个未来可能会返回的结果，它定义的方法有：get()：获取结果（可能会等待）；get(long timeout, TimeUnit unit)：获取结果，但只等待指定的时间；cancel(boolean mayInterruptIfRunning)：取消当前任务；isDone()：判断任务是否已完成。
+- 一个Future`<V>`接口表示一个未来可能会返回的结果，它定义的方法有：get()：获取结果（可能会等待）；get(long timeout, TimeUnit unit)：获取结果，但只等待指定的时间；cancel(boolean mayInterruptIfRunning)：取消当前任务；isDone()：判断任务是否已完成。
+
+## 使用CompletableFuture
+
+## 使用ForkJoin
+
+- Java 7开始引入了一种新的Fork/Join线程池，它可以执行一种特殊的任务：把一个大任务拆成多个小任务并行执行。
+- Fork/Join任务的原理：判断一个任务是否足够小，如果是，直接计算，否则，就分拆成几个小任务分别计算。这个过程可以反复“裂变”成一系列小任务。
+- Fork/Join是一种基于“分治”的算法：通过分解任务，并行执行，最后合并结果得到最终结果。
+- ForkJoinPool线程池可以把一个大任务分拆成小任务并行执行，任务类必须继承自RecursiveTask或RecursiveAction。
+- 使用Fork/Join模式可以进行并行计算以提高效率。
+- Fork/Join线程池在Java标准库中就有应用。Java标准库提供的java.util.Arrays.parallelSort(array)可以进行并行排序，它的原理就是内部通过Fork/Join对大数组分拆进行并行排序，在多核CPU上就可以大大提高排序的速度。
+
+    ```Java
+    public class Main {
+        public static void main(String[] args) {
+            long[] array = new long[2000];
+            long expectedSum = 0;
+            // 创建2000个随机数组成的数组并计算它们的和
+            for (int i = 0; i < array.length; i++) {
+                array[i] = random();
+                expectedSum += array[i];
+            }
+            System.out.println("Expected sum: " + expectedSum);
+            // 创建一个 fork/join 任务
+            ForkJoinTask<Long> task = new SumTask(array, 0, array.length);
+            long startTime = System.currentTimeMillis();
+            // 启用线程池执行任务并获取结果
+            Long result = ForkJoinPool.commonPool().invoke(task);
+            long endTime = System.currentTimeMillis();
+
+            System.out.println("Fork/join sum: " + result + " in " + (endTime - startTime) + " ms. ");
+        }
+
+        static Random random = new Random(0);
+
+        static long random() {
+            return random.nextInt(10000);
+        }
+    }
+
+    class SumTask extends RecursiveTask<Long> {
+        static final int THRESHOLD = 500;
+        long[] array;
+        int start;
+        int end;
+
+        public SumTask(long[] array, int start, int end) {
+            this.array = array;
+            this.start = start;
+            this.end = end;
+        }
+
+        @Override
+        protected Long compute() {
+            // 如果任务足够小，直接计算
+            if (end - start <= THRESHOLD) {
+                long sum = 0;
+                for (int i = start; i < end; i++) {
+                    sum += this.array[i];
+                    // 故意放慢计算速度
+                    try {
+                        Thread.sleep(1);
+                    } catch (InterruptedException e) {
+
+                    }
+                }
+                return sum;
+            }
+            // 任务太大，一分为二
+            int middle = (end + start) / 2;
+            System.out.println(String.format("split %d~%d ==> %d~%d, %d~%d", start, end, start, middle, middle, end));
+            // “分裂”子任务
+            SumTask subTask1 = new SumTask(this.array, start, middle);
+            SumTask subTask2 = new SumTask(this.array, middle, end);
+            // 并行运行两个子任务
+            invokeAll(subTask1, subTask2);
+            // 获得子任务的结果
+            Long subResult1 = subTask1.join();
+            Long subResult2 = subTask2.join();
+            // 汇总结果
+            Long result = subResult1 + subResult2;
+            System.out.println("result = " + subResult1 + " + " + subResult2 + " ==> " + result);
+            return result;
+        }
+    }
+    ```
+
+## 使用ThreadLocal
+
+- 多线程是Java实现多任务的基础，Thread对象代表一个线程，我们可以在代码中调用Thread.currentThread()获取当前线程。例如，打印日志时，可以同时打印出当前线程的名字。
+
+    ```Java
+    public class Main {
+        public static void main(String[] args) {
+            log("start main...");
+            new Thread(() -> {
+                log("run task...");
+            }).start();
+            new Thread(() -> {
+                log("print...");
+            }).start();
+            log("end main...");
+        }
+
+        static void log(String s) {
+            System.out.println(Thread.currentThread().getName() + ": " + s);
+        }
+    }
+    ```
+
+- 对于多任务，Java标准库提供的线程池可以方便地执行这些任务，同时复用线程。Web应用程序就是典型的多任务应用，每个用户请求页面时，我们都会创建一个任务，类似：
+
+    ```Java
+    public void process(User user) {
+        checkPermission();
+        doWork();
+        saveStatus();
+        sendResponse();
+    }
+    ```
+
+- 然后，通过线程池去执行这些任务。
+- 观察process()方法，它内部需要调用若干其它方法，同时，我们遇到一个问题：如何在一个线程内传递状态。
+- process()方法需要传递的状态就是User实例。有的童鞋会想，简单地传入User就可以了：
+
+    ```Java
+    public void process(User user) {
+        checkPermission(user);
+        doWork(user);
+        saveStatus(user);
+        sendResponse(user);
+    }
+    ```
+
+- 但是往往一个方法又会调用其它很多方法，这样会导致User传递到所有地方：
+
+    ```Java
+    void doWork(User user) {
+        queryStatus(user);
+        checkStatus();
+        setNewStatus(user);
+        log();
+    }
+    ```
+
+- 这种在一个线程中，横跨若干方法调用，需要传递的对象，我们通常称之为**上下文（Context）**，它是一种状态，可以是用户身份、任务信息等。
+- **给每个方法增加一个context参数非常麻烦，而且有些时候，如果调用链有无法修改源码的第三方库，User对象就传不进去了（ThreadLocal存在的意义）**。
+- Java标准库提供了一个特殊的ThreadLocal，**它可以在一个线程中传递同一个对象**。
+
+    ```Java
+    // ThreadLocal实例通常总是以静态字段初始化如下：
+    static ThreadLocal<User> threadLocalUser = new ThreadLocal<>();
+    // 它的典型使用方式如下：
+    void processUser(user) {
+        try {
+            threadLocalUser.set(user);
+            step1();
+            step2();
+        } finally {
+            threadLocalUser.remove();
+        }
+    }
+    // 通过设置一个User实例关联到ThreadLocal中，在移除之前，所有方法都可以随时获取到该User实例：
+    void step1() {
+        User u = threadLocalUser.get();
+        log();
+        printUser();
+    }
+
+    void log() {
+        User u = threadLocalUser.get();
+        println(u.name);
+    }
+
+    void step2() {
+        User u = threadLocalUser.get();
+        checkUser(u.id);
+    }
+    ```
+
+- 注意到普通的方法调用一定是同一个线程执行的，所以，step1()、step2()以及log()方法内，threadLocalUser.get()获取的User对象是同一个实例。
+- 实际上，可以把ThreadLocal看成一个**全局**`Map<Thread, Object>`：每个线程获取ThreadLocal变量时，总是使用Thread自身作为key。
+
+    ```Java
+    Object threadLocalValue = threadLocalMap.get(Thread.currentThread());
+    ```
+
+- 因此，ThreadLocal相当于**给每个线程都开辟了一个独立的存储空间**，各个线程的ThreadLocal关联的实例互不干扰。
+- **最后，特别注意ThreadLocal一定要在finally中清除**。
+- **这是因为当前线程执行完相关代码后，很可能会被重新放入线程池中，如果ThreadLocal没有被清除，该线程执行其它代码时，会把上一次的状态带进去**。
+- 为了保证能释放ThreadLocal关联的实例，我们可以通过AutoCloseable接口配合try (resource) {...}结构，让编译器自动为我们关闭。例如，一个保存了当前用户名的ThreadLocal可以封装为一个UserContext对象。
+
+    ```Java
+    public class UserContext implements AutoCloseable {
+        static final ThreadLocal<String> ctx = new ThreadLocal<>();
+
+        public UserContext(String user) {
+            ctx.set(user);
+        }
+
+        public static String currentUser() {
+            return ctx.get();
+        }
+
+        @Override
+        public void close() {
+            ctx.remove();
+        }
+    }
+    // 这样就在UserContext中完全封装了ThreadLocal，外部代码在try (resource) {...}内部可以随时调用UserContext.currentUser()获取当前线程绑定的用户名。
+    try (var ctx = new UserContext("Bob")) {
+        // 可任意调用UserContext.currentUser():
+        String currentUser = UserContext.currentUser();
+    } // 在此自动调用UserContext.close()方法释放ThreadLocal关联对象
+    ```
+
+- ThreadLocal表示线程的“局部变量”，它确保每个线程的ThreadLocal变量都是各自独立的；
+- ThreadLocal适合在一个线程的处理流程中保持上下文（避免了同一参数在所有方法中传递）；
+- 使用ThreadLocal要用try ... finally结构，并在finally中清除。
+- 个人理解：ThreadLocal为每个线程都开辟了独立的存储空间，每个线程以自身作为Key来获得这个独立的存储空间，可以选择往其中放置对象即上下文，这样只要是在这个线程内的所有方法都可以从这个存储空间中获取上下文并进行处理，最后当线程调用结束时需要对这部分独立的存储空间进行清除，否则当该线程被复用，会将上一次的对象状态带进去。
+
+    ```Java
+    public class Main {
+        public static void main(String[] args) throws Exception {
+            ExecutorService es = Executors.newFixedThreadPool(3);
+            String[] users = new String[]{"Bob", "Alice", "Tim", "Mike", "Lily", "Jack", "Bush"};
+            for (String user : users) {
+                // 启动3个线程处理多个用户
+                es.submit(new Task(user));
+            }
+            es.awaitTermination(3, TimeUnit.SECONDS);
+            es.shutdown();
+        }
+    }
+    // 将一个保存当前用户名的ThreadLocal封装为UserContext
+    class UserContext implements AutoCloseable {
+        private static final ThreadLocal<String> userThreadLocal = new ThreadLocal<>();
+
+        public UserContext(String name) {
+            userThreadLocal.set(name);
+            System.out.printf("[%s] init user %s...\n", Thread.currentThread().getName(), UserContext.getCurrentUser());
+        }
+
+        public static String getCurrentUser() {
+            return userThreadLocal.get();
+        }
+
+        @Override
+        public void close() {
+            System.out.printf("[%s] cleanup for user %s...\n", Thread.currentThread().getName(),
+                    UserContext.getCurrentUser());
+            userThreadLocal.remove();
+        }
+    }
+    // 线程类
+    class Task implements Runnable {
+
+        final String username;
+
+        public Task(String username) {
+            this.username = username;
+        }
+
+        @Override
+        public void run() {
+            // 为当前线程开辟一块独立的存储空间，并向其中放置当前用户名
+            // 在整个线程的运行期间，调用方法都可以从这个独立的存储空间中来获取这个当前用户名
+            // 并不需要将用户名作为参数进行传递
+            try (UserContext ctx = new UserContext(this.username)) {
+                new Task1().process();
+                new Task2().process();
+                new Task3().process();
+            }
+        }
+    }
+    // 子任务1
+    class Task1 {
+        public void process() {
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException e) {
+            }
+            System.out.printf("[%s] check user %s...\n", Thread.currentThread().getName(), UserContext.getCurrentUser());
+        }
+    }
+    // 子任务2
+    class Task2 {
+        public void process() {
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException e) {
+            }
+            System.out.printf("[%s] %s registered ok.\n", Thread.currentThread().getName(), UserContext.getCurrentUser());
+        }
+    }
+    // 子任务3
+    class Task3 {
+        public void process() {
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException e) {
+            }
+            System.out.printf("[%s] work of %s has done.\n", Thread.currentThread().getName(),
+                    UserContext.getCurrentUser());
+        }
+    }
+    ```
