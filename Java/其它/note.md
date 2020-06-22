@@ -1,5 +1,9 @@
 # 记录我自己踩过又老是忘记的坑
 
+## SLF4J和Logback搭配使用
+
+- 使用Maven中央仓库提供的依赖条目导入包后，在main方法中进行日志打印报错，原因在于中央条目中将logback-classic包的scope设置为test，而main方法自身不属于测试环境，因此需要修改该依赖的scope为compile，即可进行日志打印。[参考链接](https://blog.csdn.net/wang465745776/article/details/80384210)。
+
 ## 部署 war 包
 
 - 默认架构的 `maven web` 项目在 `webapp` 文件夹中提供了 `index.jsp` 文件，当访问 `/` 路径而没有指定访问文件名时，默认使用该文件内容作为响应消息体进行返回。
