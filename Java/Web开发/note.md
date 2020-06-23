@@ -377,3 +377,10 @@ public class Main {
     ![MVC架构](./image/MVC架构.jpg)
 
 - 其中，DispatcherServlet以及如何渲染均由MVC框架实现，**在MVC框架之上只需要编写每一个Controller**。
+- [MVC高级开发](https://www.liaoxuefeng.com/wiki/1252599548343744/1337408645759009)。
+- 一个MVC框架是基于Servlet基础抽象出更高级的接口，使得上层基于MVC框架的开发可以不涉及Servlet相关的HttpServletRequest等接口，处理多个请求更加灵活，并且可以使用任意模板引擎，不必使用JSP。
+- 使用MVC框架后浏览器访问路径/hello的一个处理流程：容器实例化了映射路径为/的Servlet-`DispatcherServlet`，实例化后自动调用了该Servlet中定义的`init()`方法，该方法内部将所有被扫描到的controller类中定义的所有方法和方法使用的注解当中的映射路径进行绑定；以GET方式请求/hello路径于是调用了DispatcherServlet中的`doGet`方法，doGet方法转而调用了`process`方法；在process方法内部首先获取映射了/hello路径的来自IndexController类中的hello()方法封装后的`dispatcher`，这是一个GetDispatcher；之后调用GetDispatcher的`invoke`方法，该方法内部构造了方法所需的实参列表，并再次通过反射传入实参调用`hello()`方法，获得由hello()方法返回的`ModelAndView`对象；在process方法末尾将模板引擎渲染后的数据写入到响应当中。
+
+    ![MVC大致流程](./image/MVC大致流程.jpg)
+
+- 基于上述MVC框架的底层封装，开发者只需编写Controller类，写好注解映射路径，以及Model和View之间的绑定关系。

@@ -60,7 +60,7 @@
     ```Java
     // 在实例方法中引用Log:
     public class Person {
-        protected final Log log = LogFactory.getLog(getClass());
+        protected final Log log = LogFactory.getLog(this.getClass());
 
         void foo() {
             log.info("foo");
@@ -68,7 +68,7 @@
     }
     ```
 
-- 注意到实例变量log的获取方式是LogFactory.getLog(getClass())，虽然也可以用LogFactory.getLog(Person.class)，但是前一种方式有个非常大的好处，就是子类可以直接使用该log实例。
+- 注意到实例变量log的获取方式是LogFactory.getLog(this.getClass())，虽然也可以用LogFactory.getLog(Person.class)，但是前一种方式有个非常大的好处，就是子类可以直接使用该log实例。
 - 由于Java类的动态特性，子类获取的log字段实际上相当于LogFactory.getLog(Student.class)，但却是从父类继承而来，并且无需改动代码。
 
     ```Java
@@ -129,6 +129,6 @@
     class Main {
         // 对比一下Commons Logging和SLF4J的接口
         // 不同之处就是Log变成了Logger，LogFactory变成了LoggerFactory
-        final Logger logger = LoggerFactory.getLogger(getClass());
+        final Logger logger = LoggerFactory.getLogger(this.getClass());
     }
     ```
