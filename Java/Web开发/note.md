@@ -384,5 +384,100 @@ public class Main {
     ![MVC大致流程](./image/MVC大致流程.jpg)
 
 - 基于上述MVC框架的底层封装，开发者只需编写Controller类，写好注解映射路径，以及Model和View之间的绑定关系。
+- **反射是为了解决在运行期，对某个实例一无所知的情况下，如何调用其方法。在上述框架中，使用反射根据请求路径寻找指定方法并进行调用**。
 
 ## 使用Filter
+
+![使用Filter01](./image/使用Filter01.jpg)
+
+我们可以直接把判断登录的逻辑写到这3个Servlet中，但是，同样的逻辑重复3次没有必要，并且，如果后续继续加Servlet并且也需要验证登录时，还需要继续重复这个检查逻辑。
+
+为了把一些公用逻辑从各个Servlet中抽离出来，JavaEE的Servlet规范还提供了一种Filter组件，即过滤器，它的作用是，在HTTP请求到达Servlet之前，可以被一个或多个Filter预处理，类似打印日志、登录检查等逻辑，完全可以放到Filter中。
+
+编写Filter时，必须实现Filter接口，在doFilter()方法内部，要继续处理请求，必须调用chain.doFilter()。最后，用@WebFilter注解标注该Filter需要过滤的URL。
+
+我们编写一个最简单的EncodingFilter，它强制把输入和输出的编码设置为UTF-8。
+
+```Java
+// 这里的/*表示所有路径。
+@WebFilter(urlPatterns = "/*")
+public class EncodingFilter implements Filter {
+    @Override
+    public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain) throws IOException, ServletException {
+        System.out.println("EncodingFilter:doFilter");
+        // 在servlet中就不需要单独配置请求和响应的编码格式
+        request.setCharacterEncoding("UTF-8");
+        response.setCharacterEncoding("UTF-8");
+        chain.doFilter(request, response);
+    }
+}
+```
+
+![使用Filter02](./image/使用Filter02.jpg)
+
+```Java
+@WebFilter(urlPatterns = "/*")
+public class LogFilter implements Filter {
+    @Override
+    public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain) throws IOException, ServletException {
+        // 对请求路径进行一个打印
+        System.out.println("LogFilter: process " + ((HttpServletRequest) request).getRequestURI());
+        chain.doFilter(request, response);
+    }
+}
+```
+
+![使用Filter03](./image/使用Filter03.jpg)
+
+多个Filter会组成一个链，每个请求都被链上的Filter依次处理。
+
+**Filter的顺序确实对处理的结果有影响。但遗憾的是，Servlet规范并没有对@WebFilter注解标注的Filter规定顺序。如果一定要给每个Filter指定顺序，就必须在web.xml文件中对这些Filter再配置一遍**。
+
+![使用Filter04](./image/使用Filter04.jpg)
+
+注意到上述两个Filter的过滤路径都是/*，即它们会对所有请求进行过滤。也可以编写只对特定路径进行过滤的Filter，例如AuthFilter。
+
+```Java
+// 注意到AuthFilter只过滤以/user/开头的路径。
+@WebFilter(urlPatterns = "/user/*")
+public class AuthFilter implements Filter {
+    @Override
+    public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain) throws IOException, ServletException {
+        System.out.println("AuthFilter: check authentication");
+        HttpServletRequest req = (HttpServletRequest) request;
+        HttpServletResponse resp = (HttpServletResponse) response;
+        // 当用户没有登录时，在AuthFilter内部，直接调用resp.sendRedirect()发送重定向，且没有调用chain.doFilter()，
+        // 因此，当用户没有登录时，请求到达AuthFilter后，不再继续处理，即后续的Filter和任何Servlet都没有机会处理该请求了。
+        if (req.getSession().getAttribute("user") == null) {
+            System.out.println("AuthFilter: not signin!");
+            resp.sendRedirect("/signin");
+        } else {
+            chain.doFilter(request, response);
+        }
+    }
+}
+```
+
+**Filter可以有针对性地拦截或者放行HTTP请求**。
+
+如果一个Filter在当前请求中生效，但什么都没有做。那么，用户将看到一个空白页，因为请求没有继续处理，默认响应是200+空白输出。
+
+```Java
+@WebFilter(urlPatterns = "/*")
+public class MyFilter implements Filter {
+    public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain)
+            throws IOException, ServletException {
+        // TODO
+    }
+}
+```
+
+**如果Filter要使请求继续被处理，就一定要调用chain.doFilter()**！
+
+如果我们使用上一节介绍的MVC模式，即一个统一的DispatcherServlet入口，加上多个Controller，这种模式下Filter仍然是正常工作的。例如，**一个处理`/user/*`的Filter实际上作用于那些处理/user/开头的Controller方法之前**。
+
+Filter是一种对HTTP请求进行预处理的组件，它可以构成一个处理链，使得公共处理代码能集中到一起；Filter适用于日志、登录检查、全局设置等；设计合理的URL映射可以让Filter链更清晰。
+
+## 使用Filter-修改请求
+
+Filter可以对请求进行预处理，因此，我们可以把很多**公共预处理逻辑放到Filter中完成**。
