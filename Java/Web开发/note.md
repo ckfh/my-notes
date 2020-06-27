@@ -668,3 +668,237 @@ public void doFilter(ServletRequest request, ServletResponse response, FilterCha
 借助HttpServletRequestWrapper，我们可以在Filter中实现对原始HttpServletRequest的修改。
 
 ## 使用Filter-修改响应
+
+假设我们编写了一个Servlet，但由于业务逻辑比较复杂，处理该请求需要耗费很长的时间。好消息是每次返回的**响应内容是固定的**，因此，如果我们能使用缓存将结果缓存起来，就可以大大提高Web应用程序的运行效率。
+
+缓存逻辑最好不要在Servlet内部实现，因为我们希望能复用缓存逻辑，所以，编写一个CacheFilter最合适。
+
+```Java
+@WebFilter(urlPatterns = "/slow/*")
+public class CacheFilter implements Filter {
+    // Path到byte[]的缓存
+    private Map<String, byte[]> cache = new ConcurrentHashMap<>();
+
+    @Override
+    public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain) throws IOException, ServletException {
+        HttpServletRequest req = (HttpServletRequest) request;
+        HttpServletResponse resp = (HttpServletResponse) response;
+        // 获取Path
+        String url = req.getRequestURI();
+        // 获取缓存内容
+        byte[] data = this.cache.get(url);
+        resp.setHeader("X-Cache-Hit", data == null ? "No" : "Yes");
+        if (data == null) {
+            // 缓存未找到，构造一个伪造的Response
+            CachedHttpServletResponse wrapper = new CachedHttpServletResponse(resp);
+            // 让下游组件写入数据到伪造的Response
+            chain.doFilter(request, wrapper);
+            // 从伪造的Response中读取写入的内容并放入缓存
+            data = wrapper.getContent();
+            this.cache.put(url, data);
+        }
+        // 如果缓存被找到，则不再交给下游组件处理，而是直接返回缓存
+        // 写入到原始的Response
+        ServletOutputStream output = resp.getOutputStream();
+        output.write(data);
+        output.flush();
+    }
+}
+```
+
+实现缓存的关键在于，调用doFilter()时，我们**不能传入原始的HttpServletResponse**，因为这样就会写入Socket，我们也就无法获取下游组件写入的内容。如果我们传入的是“伪造”的HttpServletResponse，让下游组件写入到我们预设的ByteArrayOutputStream，我们就“截获”了下游组件写入的内容，于是，就可以把内容缓存起来，再通过原始的HttpServletResponse实例写入到网络。
+
+```Java
+public class CachedHttpServletResponse extends HttpServletResponseWrapper {
+    private boolean open = false;
+    private ByteArrayOutputStream output = new ByteArrayOutputStream();
+
+    /**
+     * Constructs a response adaptor wrapping the given response.
+     *
+     * @param response The response to be wrapped
+     * @throws IllegalArgumentException if the response is null
+     */
+    public CachedHttpServletResponse(HttpServletResponse response) {
+        super(response);
+    }
+    // 下游组件如果获取Writer
+    public PrintWriter getWriter() throws IOException {
+        if (this.open) {
+            throw new IllegalStateException("Cannot re-open writer!");
+        }
+        this.open = true;
+        return new PrintWriter(this.output, false);
+    }
+    // 下游组件如果获取OutputStream
+    public ServletOutputStream getOutputStream() throws IOException {
+        if (this.open) {
+            throw new IllegalStateException("Cannot re-open output stream!");
+        }
+        this.open = true;
+        return new ServletOutputStream() {
+            @Override
+            public boolean isReady() {
+                return true;
+            }
+
+            @Override
+            public void setWriteListener(WriteListener listener) {
+
+            }
+
+            @Override
+            public void write(int b) throws IOException {
+                CachedHttpServletResponse.this.output.write(b);
+            }
+        };
+    }
+    // 返回下游组件以为写入到Response实际上是写入到我们构造的一个byte[]数组
+    public byte[] getContent() {
+        return this.output.toByteArray();
+    }
+}
+```
+
+可见，如果我们想要修改响应，就可以通过HttpServletResponseWrapper构造一个“伪造”的HttpServletResponse，这样就能拦截到写入的数据。
+
+修改响应时，最后不要忘记把数据写入原始的HttpServletResponse实例。
+
+这个CacheFilter同样是一个“可插拔”组件，它是否启用不影响Web应用程序的其他组件（Filter、Servlet）。
+
+## 使用Listener
+
+除了Servlet和Filter外，JavaEE的Servlet规范还提供了第三种组件：Listener。
+
+Listener顾名思义就是监听器，有好几种Listener，其中最常用的是ServletContextListener，我们编写一个实现了ServletContextListener接口的类如下：
+
+```Java
+@WebListener
+public class AppListener implements ServletContextListener {
+    // 在此处初始化WebApp，比如打开数据库连接池等
+    @Override
+    public void contextInitialized(ServletContextEvent sce) {
+        System.out.println("WebApp initialized.");
+    }
+    // 在此处清理WebApp，比如关闭数据库连接池等
+    @Override
+    public void contextDestroyed(ServletContextEvent sce) {
+        System.out.println("WebApp destroyed.");
+    }
+}
+```
+
+任何标注为@WebListener，且实现了特定接口的类会被Web服务器**自动初始化**。上述AppListener实现了ServletContextListener接口，它会在整个Web应用程序初始化完成后，以及Web应用程序关闭后获得回调通知。我们可以把初始化数据库连接池等工作放到contextInitialized()回调方法中，把清理资源的工作放到contextDestroyed()回调方法中，**因为Web服务器保证在contextInitialized()执行后，才会接受用户的HTTP请求**。
+
+很多第三方Web框架都会通过一个ServletContextListener接口初始化自己。
+
+除了ServletContextListener外，还有几种Listener：HttpSessionListener：监听HttpSession的创建和销毁事件；ServletRequestListener：监听ServletRequest请求的创建和销毁事件；ServletRequestAttributeListener：监听ServletRequest请求的属性变化事件（即调用ServletRequest.setAttribute()方法）；ServletContextAttributeListener：监听ServletContext的属性变化事件（即调用ServletContext.setAttribute()方法）；
+
+一个Web服务器可以运行一个或多个WebApp，**对于每个WebApp，Web服务器都会为其创建一个全局唯一的ServletContext实例**，我们在AppListener里面编写的两个回调方法实际上对应的就是ServletContext实例的创建和销毁：
+
+```Java
+public void contextInitialized(ServletContextEvent sce) {
+    System.out.println("WebApp initialized: ServletContext = " + sce.getServletContext());
+}
+```
+
+ServletRequest、HttpSession等很多对象也提供getServletContext()方法获取到**同一个ServletContext实例**。**ServletContext实例最大的作用就是设置和共享全局信息**。
+
+通过Listener我们可以监听Web应用程序的生命周期，获取HttpSession等创建和销毁的事件；**ServletContext是一个WebApp运行期的全局唯一实例，可用于设置和共享配置信息**。
+
+## 部署
+
+对一个Web应用程序来说，除了Servlet、Filter这些逻辑组件，还需要JSP这样的视图文件，外加一堆静态资源文件，如CSS、JS等。
+
+合理组织文件结构非常重要。我们以一个具体的Web应用程序为例：
+
+![部署01](./image/部署01.jpg)
+
+模板文件当中引用了多少静态文件就会发送多少相应的请求消息，因此WebApp中应当有相应的Servlet来处理这些请求消息。
+
+我们把所有的静态资源文件放入/static/目录，在开发阶段，**有些Web服务器会自动为我们加一个专门负责处理静态文件的Servlet**，但如果IndexServlet映射路径为/，会屏蔽掉处理静态文件的Servlet映射。因此，我们需要自己编写一个处理静态文件的FileServlet：
+
+```Java
+@WebServlet(urlPatterns = "/static/*")
+public class FileServlet extends HttpServlet {
+    @Override
+    protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
+        // 获取全局唯一的ServletContext实例
+        ServletContext ctx = req.getServletContext();
+        // RequestURI包含ContextPath，需要去掉
+        String urlPath = req.getRequestURI().substring(ctx.getContextPath().length());
+        // 获取文件真实路径
+        String filepath = ctx.getRealPath(urlPath);
+        if (filepath == null) {
+            // 无法获取到路径
+            resp.sendError(HttpServletResponse.SC_NOT_FOUND);
+            return;
+        }
+        Path path = Paths.get(filepath);
+        if (!path.toFile().isFile()) {
+            // 文件不存在
+            resp.sendError(HttpServletResponse.SC_NOT_FOUND);
+            return;
+        }
+        // 根据文件名称猜测Content-Type
+        String mime = Files.probeContentType(path);
+        if (mime == null)
+            mime = "application/octet-stream";
+        resp.setContentType(mime);
+        // 读取文件并写入Response
+        OutputStream output = resp.getOutputStream();
+        try (InputStream input = new BufferedInputStream(new FileInputStream(filepath))) {
+            byte[] buffer = new byte[1024];
+            int len;
+            while ((len = input.read(buffer)) != -1) {
+                output.write(buffer, 0, len);
+            }
+        }
+        output.flush();
+    }
+}
+```
+
+类似Tomcat这样的Web服务器，运行的Web应用程序通常都是业务系统，因此，这类服务器也被称为应用服务器。应用服务器并不擅长处理静态文件，也不适合直接暴露给用户。通常，我们在生产环境部署时，总是使用类似Nginx这样的服务器充当反向代理和静态服务器，只有动态请求才会放行给应用服务器，所以，部署架构如下：
+
+![部署02](./image/部署02.jpg)
+
+```YAML
+server {
+    listen 80;
+
+    server_name www.local.liaoxuefeng.com;
+
+    # 静态文件根目录:
+    root /path/to/src/main/webapp;
+
+    access_log /var/log/nginx/webapp_access_log;
+    error_log  /var/log/nginx/webapp_error_log;
+
+    # 处理静态文件请求:
+    location /static {
+    }
+
+    # 处理静态文件请求:
+    location /favicon.ico {
+    }
+
+    # 不允许请求/WEB-INF:
+    location /WEB-INF {
+        return 404;
+    }
+
+    # 其他请求转发给Tomcat:
+    location / {
+        proxy_pass       http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+}
+```
+
+使用Nginx配合Tomcat服务器，可以充分发挥Nginx作为网关的优势，既可以高效处理静态文件，也可以把https、防火墙、限速、反爬虫等功能放到Nginx中，使得我们自己的WebApp能专注于业务逻辑。
+
+部署Web应用程序时，要设计合理的目录结构，**同时考虑开发模式需要便捷性，生产模式需要高性能**。
