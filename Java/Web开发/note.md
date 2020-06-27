@@ -80,12 +80,12 @@ class HTTPHandler extends Thread {
 }
 ```
 
-![页面](.\image\页面.jpg)
+![页面](./image/页面.jpg)
 
 ## Servlet入门
 
 - 在JavaEE平台上，处理TCP连接，解析HTTP协议这些底层工作统统扔给现成的Web服务器去做，我们只需要把自己的应用程序跑在Web服务器上。为了实现这一目的，JavaEE提供了Servlet API，我们使用Servlet API编写自己的Servlet来处理HTTP请求，Web服务器实现Servlet API接口，实现底层功能。  
-    ![过程](.\image\过程.jpg)
+    ![过程](./image/过程.jpg)
 - 编写Web应用程序就是编写Servlet处理HTTP请求；Servlet API提供了HttpServletRequest和HttpServletResponse两个高级接口来封装HTTP请求和响应；Web应用程序必须按**固定结构**组织并打包为.war文件；需要启动Web服务器来加载我们的war包来运行Servlet。
 - 一个Servlet总是继承自HttpServlet，然后覆写doGet()或doPost()方法。注意到doGet()方法传入了HttpServletRequest和HttpServletResponse两个对象，分别代表HTTP请求和响应。我们使用Servlet API时，并不直接与底层TCP交互，也不需要解析HTTP协议，因为HttpServletRequest和HttpServletResponse就已经封装好了请求和响应。以发送响应为例，我们只需要设置正确的响应类型，然后获取PrintWriter，写入响应即可。
 
@@ -104,7 +104,7 @@ class HTTPHandler extends Thread {
     }
     ```
 
-    ![servlet页面](.\image\servlet页面.jpg)
+    ![servlet页面](./image/servlet页面.jpg)
 
 - **为啥路径是/hello/而不是/。因为一个Web服务器允许同时运行多个Web App，而我们的Web App叫hello，因此，第一级目录/hello表示Web App的名字，后面的/才是我们在HelloServlet中映射的路径。**
 - 类似Tomcat这样的服务器也是Java编写的，启动Tomcat服务器实际上是启动Java虚拟机，执行Tomcat的main()方法，然后由Tomcat负责加载我们的.war文件，并创建一个HelloServlet实例，最后以多线程的模式来处理HTTP请求。如果Tomcat服务器收到的请求路径是/（假定部署文件为ROOT.war），就转发到HelloServlet并传入HttpServletRequest和HttpServletResponse两个对象。
@@ -149,7 +149,7 @@ public class Main {
 - 通过main()方法启动Tomcat服务器并加载我们自己的webapp有如下好处：启动简单，无需下载Tomcat或安装任何IDE插件；调试方便，可在IDE中使用断点调试；使用Maven创建war包后，也可以正常部署到独立的Tomcat服务器中。
 - 开发Servlet时，推荐使用main()方法启动嵌入式Tomcat服务器并加载当前工程的webapp，便于开发调试，且不影响打包部署，能极大地提升开发效率。
 
-![方案](.\image\方案.jpg)
+![方案](./image/方案.jpg)
 
 ## Servlet进阶
 
@@ -181,15 +181,15 @@ public class Main {
     }
     ```
 
-    ![重定向响应](.\image\重定向响应.jpg)
+    ![重定向响应](./image/重定向响应.jpg)
 
 - 当浏览器收到302响应后，它会立刻根据Location的指示发送一个新的GET /hello请求，这个过程就是重定向。
 
-    ![重定向过程](.\image\重定向过程.jpg)
+    ![重定向过程](./image/重定向过程.jpg)
 
 - 可以观察到浏览器发送了两次HTTP请求，并且浏览器的地址栏路径自动更新为/hello。
 
-    ![传参重定向](.\image\传参重定向.jpg)
+    ![传参重定向](./image/传参重定向.jpg)
 
 - 重定向有两种：一种是302响应，称为临时重定向，一种是301响应，称为永久重定向。两者的区别是，如果服务器发送301永久重定向响应，浏览器会**缓存**/hi到/hello这个重定向的关联，下次请求/hi的时候，浏览器就直接发送/hello请求了。
 
@@ -201,9 +201,9 @@ public class Main {
 
 - 当使用301永久重定向时的几个注意点：1.第一次访问的路径会被缓存，再次访问时控制台会显示该重定向来自缓存。2.启用301永久重定向时的所有访问路径都会被缓存，如果之后切换为302临时重定向，此时被缓存的路径仍然以301响应码进行返回，新的路径则以302响应码进行返回。3.如果想要禁止路径缓存，可以在控制台中选择disable cache。
 
-    ![永久重定向](.\image\永久重定向.jpg)
+    ![永久重定向](./image/永久重定向.jpg)
 
-    ![永久重定向缓存](.\image\永久重定向缓存.jpg)
+    ![永久重定向缓存](./image/永久重定向缓存.jpg)
 
 - **重定向的目的是当Web应用升级后，如果请求路径发生了变化，可以将原来的路径重定向到新路径，从而避免浏览器请求原路径找不到资源。**
 
@@ -212,7 +212,7 @@ public class Main {
 - Forward是指内部转发。当一个Servlet处理请求的时候，它可以决定自己不继续处理，而是转发给另一个Servlet处理。
 - **转发和重定向的区别在于，转发是在Web服务器内部完成的，对浏览器来说，它只发出了一个HTTP请求。**
 
-    ![转发](.\image\转发.jpg)
+    ![转发](./image/转发.jpg)
 
     ```Java
     @WebServlet(urlPatterns = "/morning")
