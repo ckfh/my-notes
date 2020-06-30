@@ -1,5 +1,13 @@
 # 记录我自己踩过又老是忘记的坑
 
+## 整数溢出
+
+```Java
+System.out.println((2147483640 + 2147483642) / 2);              // 结果错误
+System.out.println(2147483640 + (2147483642 - 2147483640) / 2); // 结果正确
+System.out.println((2147483640 + 2147483642) >>> 1);            // 结果正确
+```
+
 ## SLF4J和Logback搭配使用
 
 - 使用Maven中央仓库提供的依赖条目导入包后，在main方法中进行日志打印报错，原因在于中央条目中将logback-classic包的scope设置为test，而main方法自身不属于测试环境，因此需要修改该依赖的scope为compile，即可进行日志打印。[参考链接](https://blog.csdn.net/wang465745776/article/details/80384210)。

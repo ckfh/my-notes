@@ -96,7 +96,7 @@ public class BookService {
 
   1. BookService不再关心如何创建DataSource，因此，不必编写读取数据库配置之类的代码；
   2. DataSource实例被注入到BookService，同样也可以注入到UserService，因此，共享一个组件非常简单；
-  3. 测试BookService更容易，因为注入的是DataSource，可以使用内存数据库，而不是真实的MySQL配置。
+  3. 测试BookService更容易，因为注入的是DataSource，测试时可以使用内存数据库，而不是真实的MySQL配置。
 
 因此，IoC又称为依赖注入（DI：Dependency Injection），它解决了一个最主要的问题：**将组件的创建➕配置与组件的使用相分离**，并且，由IoC容器负责管理组件的生命周期。
 
@@ -136,3 +136,138 @@ Spring的IoC容器同时支持属性注入和构造方法注入，并允许混�
   2. 测试的时候并不依赖Spring容器，可单独进行测试，大大提高了开发效率。
 
 ## 装配Bean
+
+![装配bean](./image/装配bean-工程结构.jpg)
+
+我们用Maven创建工程并引入spring-context依赖。
+
+```Java
+// 编写一个MailService，用于在用户登录和注册成功后发送邮件通知。
+public class MailService {
+    private ZoneId zoneId = ZoneId.systemDefault();
+
+    public void setZoneId(ZoneId zoneId) {
+        this.zoneId = zoneId;
+    }
+
+    public String getTime() {
+        return ZonedDateTime.now(this.zoneId).format(DateTimeFormatter.ISO_ZONED_DATE_TIME);
+    }
+
+    public void sendLoginMail(User user) {
+        System.err.println(String.format("Hi, %s! You are Logged in at %s.", user.getName(), this.getTime()));
+    }
+
+    public void sendRegistrationMail(User user) {
+        System.err.println(String.format("Welcome, %s!", user.getName()));
+    }
+}
+```
+
+```Java
+// 编写一个UserService，实现用户注册和登录。
+public class UserService {
+    private MailService mailService;
+    // 注意到UserService通过setMailService()注入了一个MailService。
+    public void setMailService(MailService mailService) {
+        this.mailService = mailService;
+    }
+
+    private List<User> users = new ArrayList<>(List.of( // users:
+            new User(1, "bob@example.com", "password", "Bob"), // bob
+            new User(2, "alice@example.com", "password", "Alice"), // alice
+            new User(3, "tom@example.com", "password", "Tom"))); // tom
+
+    public User login(String email, String password) {
+        for (User user : users) {
+            if (user.getEmail().equalsIgnoreCase(email) && user.getPassword().equals(password)) {
+                mailService.sendLoginMail(user);
+                return user;
+            }
+        }
+        throw new RuntimeException("login failed.");
+    }
+
+    public User getUser(long id) {
+        return this.users.stream().filter(user -> user.getId() == id).findFirst().orElseThrow();
+    }
+
+    public User register(String email, String password, String name) {
+        users.forEach((user) -> {
+            if (user.getEmail().equalsIgnoreCase(email)) {
+                throw new RuntimeException("email exist.");
+            }
+        });
+        User user = new User(users.stream().mapToLong(u -> u.getId()).max().orElse(0L) + 1, email, password, name);
+        users.add(user);
+        mailService.sendRegistrationMail(user);
+        return user;
+    }
+}
+```
+
+```XML
+<!-- 编写一个特定的application.xml配置文件，告诉Spring的IoC容器应该如何创建并组装Bean。 -->
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans
+        https://www.springframework.org/schema/beans/spring-beans.xsd">
+
+    <bean id="userService" class="com.cat.service.UserService">
+        <property name="mailService" ref="mailService"/>
+        <property name="userDAO" ref="userDAO"/>
+    </bean>
+
+    <bean id="mailService" class="com.cat.service.MailService"/>
+</beans>
+```
+
+- 每个`<bean ...>`都有一个id标识，相当于Bean的唯一ID；
+- 在userServiceBean中，通过`<property name="..." ref="..." />`注入了另一个Bean；
+- **Bean的顺序不重要**，Spring根据依赖关系会自动正确初始化。
+
+```Java
+// 把上述XML配置文件用Java代码写出来，就像这样。
+UserService userService = new UserService();
+MailService mailService = new MailService();
+userService.setMailService(mailService);
+```
+
+**只不过Spring容器是通过读取XML文件后使用反射完成的**。
+
+```XML
+<!-- 如果注入的不是Bean，而是boolean、int、String这样的数据类型，则通过value注入，例如，创建一个HikariDataSource。 -->
+<bean id="dataSource" class="com.zaxxer.hikari.HikariDataSource">
+    <property name="jdbcUrl" value="jdbc:mysql://localhost:3306/test" />
+    <property name="username" value="root" />
+    <property name="password" value="password" />
+    <property name="maximumPoolSize" value="10" />
+    <property name="autoCommit" value="true" />
+</bean>
+```
+
+```Java
+// 最后一步，我们需要创建一个Spring的IoC容器实例，然后加载配置文件，让Spring容器为我们创建并装配好配置文件中指定的所有Bean，这只需要一行代码。
+ApplicationContext context = new ClassPathXmlApplicationContext("application.xml");
+```
+
+```Java
+// 接下来，我们就可以从Spring容器中“取出”装配好的Bean然后使用它。
+// 获取Bean:
+UserService userService = context.getBean(UserService.class);
+// 正常调用:
+User user = userService.login("bob@example.com", "password");
+```
+
+可以看到，Spring容器就是ApplicationContext，它是一个接口，有很多实现类，这里我们选择ClassPathXmlApplicationContext，表示它会自动从classpath中查找指定的XML配置文件。
+
+获得了ApplicationContext的实例，就获得了IoC容器的引用。从ApplicationContext中我们可以根据Bean的ID获取Bean，但更多的时候我们**根据Bean的类型获取Bean的引用**。
+
+```Java
+// Spring还提供另一种IoC容器叫BeanFactory，使用方式和ApplicationContext类似。
+BeanFactory factory = new XmlBeanFactory(new ClassPathResource("application.xml"));
+MailService mailService = factory.getBean(MailService.class);
+```
+
+BeanFactory和ApplicationContext的区别在于，BeanFactory的实现是按需创建，即第一次获取Bean时才创建这个Bean，而ApplicationContext会一次性创建所有的Bean。实际上，ApplicationContext接口是从BeanFactory接口继承而来的，并且，ApplicationContext提供了一些额外的功能，包括国际化支持、事件和通知机制等。**通常情况下，我们总是使用ApplicationContext，很少会考虑使用BeanFactory**。按需创建的时候，发现依赖有问题再报个错，还不如启动就报错。
