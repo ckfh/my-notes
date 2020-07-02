@@ -66,7 +66,7 @@ public class HistoryServlet extends HttpServlet {
 }
 ```
 
-上述每个组件都采用了一种简单的通过new创建实例并持有的方式。仔细观察，会发现以下缺点：
+上述每个组件都采用了一种简单的**通过new创建实例并持有**的方式。仔细观察，会发现以下缺点：
 
   1. 实例化一个组件其实很难，例如，BookService和UserService要创建HikariDataSource，实际上需要读取配置，才能先实例化HikariConfig，再实例化HikariDataSource。
   2. 没有必要让BookService和UserService分别创建DataSource实例，完全可以共享同一个DataSource，但谁负责创建DataSource，谁负责获取其它组件已经创建的DataSource，不好处理。类似的，CartServlet和HistoryServlet也应当共享BookService实例和UserService实例，但也不好处理。
@@ -92,7 +92,7 @@ public class BookService {
 }
 ```
 
-不直接**new**一个DataSource，而是**注入**一个DataSource，这个小小的改动虽然简单，却带来了一系列好处：
+不直接**new**一个DataSource，而是**注入**一个DataSource，这个小小的改动虽然简单，却给**编写和测试**JavaBean带来了一系列好处：
 
   1. BookService不再关心如何创建DataSource，因此，不必编写读取数据库配置之类的代码；
   2. DataSource实例被注入到BookService，同样也可以注入到UserService，因此，共享一个组件非常简单；
@@ -114,7 +114,7 @@ public class BookService {
 </beans>
 ```
 
-上述XML配置文件指示IoC容器创建3个JavaBean组件，并把id为dataSource的组件通过属性dataSource（即调用setDataSource()方法）注入到另外两个组件中。在Spring的IoC容器中，我们把所有**组件**统称为**JavaBean**，即配置一个组件就是配置一个Bean。
+上述XML配置文件指示IoC容器创建3个JavaBean组件，并把id为dataSource的组件通过属性dataSource（即调用setDataSource()方法）注入到另外两个组件中。在Spring的IoC容器中，我们把所有**组件**统称为**JavaBean**，即**配置一个组件**就是**配置一个Bean**。
 
 我们从上面的代码可以看到，依赖注入可以通过set()方法实现。但依赖注入也可以通过构造方法实现。很多Java类都具有带参数的构造方法，如果我们把BookService改造为通过构造方法注入，那么实现代码如下：
 
@@ -216,7 +216,6 @@ public class UserService {
 
     <bean id="userService" class="com.cat.service.UserService">
         <property name="mailService" ref="mailService"/>
-        <property name="userDAO" ref="userDAO"/>
     </bean>
 
     <bean id="mailService" class="com.cat.service.MailService"/>
@@ -273,6 +272,8 @@ MailService mailService = factory.getBean(MailService.class);
 BeanFactory和ApplicationContext的区别在于，BeanFactory的实现是按需创建，即第一次获取Bean时才创建这个Bean，而ApplicationContext会一次性创建所有的Bean。实际上，ApplicationContext接口是从BeanFactory接口继承而来的，并且，ApplicationContext提供了一些额外的功能，包括国际化支持、事件和通知机制等。**通常情况下，我们总是使用ApplicationContext，很少会考虑使用BeanFactory**。按需创建的时候，发现依赖有问题再报个错，还不如启动就报错。
 
 ## 使用Annotation配置
+
+> Component/Autowired/Configuration/ComponentScan
 
 使用Spring的IoC容器，实际上就是通过类似XML这样的配置文件，**把我们自己的Bean的依赖关系描述出来，然后让容器来创建并装配Bean**。一旦容器初始化完毕，我们就直接从容器中获取Bean使用它们。
 
@@ -338,6 +339,8 @@ AppConfig标注了@Configuration，表示它是一个配置类，因为我们创
 使用@ComponentScan非常方便，但是，我们也要特别注意包的层次结构。通常来说，**启动配置AppConfig位于自定义的顶层包，其它Bean按类别放入子包**。
 
 ## 定制Bean
+
+> Scope/Order/Bean/PostConstruct/PreDestroy/Qualifier/Primary
 
 - Spring默认使用Singleton创建Bean，也可指定Scope为Prototype；
 - 可将相同类型的Bean注入List；
@@ -452,7 +455,7 @@ public class AppConfig {
 }
 ```
 
-有些时候，一个Bean在注入必要的依赖后，需要进行初始化（监听消息等）。在容器关闭时，有时候还需要清理资源（关闭连接池等）。我们通常会定义一个init()方法进行初始化，定义一个shutdown()方法进行清理，然后，引入JSR-250定义的Annotation。在Bean的初始化和清理方法上标记@PostConstruct和@PreDestroy。Spring容器会对下述Bean做如下初始化流程：调用构造方法创建MailService实例；根据@Autowired进行注入；调用标记有@PostConstruct的init()方法进行初始化。而销毁时，容器会首先调用标记有@PreDestroy的shutdown()方法。Spring只根据Annotation查找**无参数**方法，对方法名不作要求。
+有些时候，一个Bean在注入必要的依赖后，需要进行初始化（监听消息等）。在容器关闭时，有时候还需要清理资源（关闭连接池等）。我们通常会定义一个init()方法进行初始化，定义一个shutdown()方法进行清理，然后，引入JSR-250定义的Annotation。在Bean的初始化和清理方法上标记@PostConstruct和@PreDestroy。Spring容器会对下述Bean做如下初始化流程：调用构造方法创建MailService实例；根据@Autowired进行注入；调用标记有@PostConstruct的init()方法进行初始化。而销毁（要手动调用applicationContext.close()不能直接点结束进程）时，容器会首先调用标记有@PreDestroy的shutdown()方法。Spring只根据Annotation查找**无参数**方法，对方法名不作要求。
 
 ```XML
 <dependency>
@@ -479,3 +482,237 @@ public class MailService {
     }
 }
 ```
+
+默认情况下，对一种类型的Bean，容器只创建一个实例。但有些时候，我们需要对一种类型的Bean创建多个实例。
+
+```Java
+// 例如，同时连接多个数据库，就必须创建多个DataSource实例。
+// 如果我们在@Configuration类中创建了多个同类型的Bean，Spring会报NoUniqueBeanDefinitionException异常，意思是出现了重复的Bean定义。
+@Configuration
+@ComponentScan
+public class AppConfig {
+    @Bean
+    ZoneId createZoneOfZ() {
+        return ZoneId.of("Z");
+    }
+
+    @Bean
+    ZoneId createZoneOfUTC8() {
+        return ZoneId.of("UTC+08:00");
+    }
+}
+```
+
+```Java
+// 这个时候，需要给每个Bean添加不同的名字，可以用@Bean("name")指定别名，也可以用@Bean+@Qualifier("name")指定别名。
+@Configuration
+@ComponentScan
+public class AppConfig {
+    @Bean("z")
+    ZoneId createZoneOfZ() {
+        return ZoneId.of("Z");
+    }
+
+    @Bean
+    @Qualifier("utc8")
+    ZoneId createZoneOfUTC8() {
+        return ZoneId.of("UTC+08:00");
+    }
+}
+```
+
+```Java
+// 存在多个同类型的Bean时，注入ZoneId又会报错，意思是期待找到唯一的ZoneId类型Bean，但是找到两。
+// NoUniqueBeanDefinitionException: No qualifying bean of type 'java.time.ZoneId' available: expected single matching bean but found 2
+// 因此，注入时，要指定Bean的名称。
+@Component
+public class MailService {
+    @Autowired(required = false)
+    @Qualifier("z") // 指定注入名称为"z"的ZoneId
+    ZoneId zoneId = ZoneId.systemDefault();
+    ...
+}
+// 还有一种方法是把其中某个Bean指定为@Primary，这样，在注入时，如果没有指出Bean的名字，Spring会注入标记有@Primary的Bean。
+@Configuration
+@ComponentScan
+public class AppConfig {
+    @Bean
+    @Primary // 指定为主要Bean
+    @Qualifier("z")
+    ZoneId createZoneOfZ() {
+        return ZoneId.of("Z");
+    }
+
+    @Bean
+    @Qualifier("utc8")
+    ZoneId createZoneOfUTC8() {
+        return ZoneId.of("UTC+08:00");
+    }
+}
+// 这种方式也很常用。例如，对于主从两个数据源，通常将主数据源定义为@Primary，其它Bean默认注入的就是主数据源。如果要注入从数据源，那么只需要指定名称即可。
+@Configuration
+@ComponentScan
+public class AppConfig {
+    @Bean
+    @Primary
+    DataSource createMasterDataSource() {
+        ...
+    }
+
+    @Bean
+    @Qualifier("slave")
+    DataSource createSlaveDataSource() {
+        ...
+    }
+}
+```
+
+我们在设计模式的工厂方法中讲到，很多时候，可以通过工厂模式创建对象。Spring也提供了工厂模式，允许定义一个工厂，然后由工厂创建真正的Bean。
+
+```Java
+// 用工厂模式创建Bean需要实现FactoryBean接口。
+// 当一个Bean实现了FactoryBean接口后，Spring会先实例化这个工厂，然后调用getObject()创建真正的Bean。
+// getObjectType()可以指定创建的Bean的类型，因为指定类型不一定与实际类型一致，可以是接口或抽象类。
+// 因此，如果定义了一个FactoryBean，要注意Spring创建的Bean实际上是这个FactoryBean的getObject()方法返回的Bean。
+// 为了和普通Bean区分，我们通常都以XxxFactoryBean命名。
+@Component
+public class ZoneIdFactoryBean implements FactoryBean<ZoneId> {
+
+    String zone = "Z";
+
+    @Override
+    public ZoneId getObject() throws Exception {
+        return ZoneId.of(zone);
+    }
+
+    @Override
+    public Class<?> getObjectType() {
+        return ZoneId.class;
+    }
+}
+```
+
+## 使用Resource
+
+> Value
+
+在Java程序中，我们经常会读取配置文件、资源文件等。使用Spring容器时，我们也可以把“文件”注入进来，方便程序读取。
+
+例如，AppService需要读取logo.txt这个文件，通常情况下，我们需要写很多繁琐的代码，主要是为了定位文件，打开InputStream。
+
+Spring提供了一个org.springframework.core.io.Resource（注意不是javax.annotation.Resource），它可以像String、int一样使用@Value注入。
+
+```Java
+import org.springframework.core.io.Resource;
+
+@Component
+public class AppService {
+    @Value("classpath:/logo.txt")
+    private Resource resource;
+    private String logo;
+
+    @PostConstruct
+    public void init() throws IOException {
+        InputStream in;
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(this.resource.getInputStream(), StandardCharsets.UTF_8))) {
+            this.logo = reader.lines().collect(Collectors.joining("\n"));
+        }
+    }
+}
+```
+
+注入Resource最常用的方式是通过classpath，即类似classpath:/logo.txt表示在classpath中搜索logo.txt文件，然后，我们直接调用Resource.getInputStream()就可以获取到输入流，**避免了自己搜索文件的代码**。
+
+也可以直接指定文件的路径，例如：
+
+```Java
+@Value("file:/path/to/logo.txt")
+private Resource resource;
+```
+
+但使用classpath是最简单的方式。使用Maven的标准目录结构，所有资源文件放入src/main/resources即可。
+
+## 注入配置
+
+> PropertySource
+
+在开发应用程序时，经常需要读取配置文件。最常用的配置方法是以key=value的形式写在.properties文件中。
+
+例如，MailService根据配置的app.zone=Asia/Shanghai来决定使用哪个时区。要读取配置文件，我们可以使用上一节讲到的Resource来读取位于classpath下的一个app.properties文件。但是，这样仍然比较繁琐。
+
+Spring容器还提供了一个更简单的@PropertySource来自动读取配置文件。我们只需要在@Configuration配置类上再添加一个注解。
+
+```Java
+@Configuration
+@ComponentScan
+@PropertySource("app.properties") // 表示读取classpath的app.properties
+public class AppConfig {
+    @Value("${app.zone:Z}")
+    String zoneId;
+
+    @Bean
+    ZoneId createZoneId() {
+        return ZoneId.of(zoneId);
+    }
+}
+```
+
+Spring容器看到@PropertySource("app.properties")注解后，自动读取这个配置文件，然后，我们使用@Value正常注入。
+
+```Java
+@Value("${app.zone:Z}")
+String zoneId;
+```
+
+注意注入的字符串语法，它的格式如下："${app.zone}"表示读取key为app.zone的value，如果key不存在，启动将报错；"${app.zone:Z}"表示读取key为app.zone的value，但如果key不存在，就使用默认值Z。这样一来，我们就可以根据app.zone的配置来创建ZoneId。
+
+```Java
+// 还可以把注入的注解写到方法参数中。
+@Bean
+ZoneId createZoneId(@Value("${app.zone:Z}") String zoneId) {
+    return ZoneId.of(zoneId);
+}
+```
+
+可见，先使用@PropertySource读取配置文件，然后通过@Value以${key:defaultValue}的形式注入，可以极大地简化读取配置的麻烦。
+
+另一种注入配置的方式是先通过一个简单的JavaBean**持有所有的配置**。
+
+```Java
+@Component
+@PropertySource("smtp.properties")
+public class SmtpConfig {
+    @Value("${smtp.host}")
+    private String host;
+
+    @Value("${smtp.port:25}")
+    private int port;
+
+    public String getHost() {
+        return host;
+    }
+
+    public int getPort() {
+        return port;
+    }
+}
+```
+
+然后，在需要读取的地方，使用#{smtpConfig.host}注入。
+
+```Java
+@Component
+public class MailService {
+    @Value("#{smtpConfig.host}")
+    private String smtpHost;
+
+    @Value("#{smtpConfig.port}")
+    private int smtpPort;
+}
+```
+
+注意观察#{}这种注入语法，它和${key}不同的是，#{}表示从JavaBean读取属性。"#{smtpConfig.host}"的意思是，从名称为smtpConfig的Bean读取host属性，即调用getHost()方法。一个Class名为SmtpConfig的Bean，它在Spring容器中的默认名称就是smtpConfig，除非用@Qualifier指定了名称。
+
+使用一个独立的JavaBean持有所有属性，然后在其它Bean中以#{bean.property}注入的好处是，多个Bean都可以引用同一个Bean的某个属性。例如，如果SmtpConfig决定从数据库中读取相关配置项，那么MailService注入的@Value("#{smtpConfig.host}")仍然可以不修改正常运行。
+
+## 使用条件装配
