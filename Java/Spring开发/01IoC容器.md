@@ -338,3 +338,144 @@ AppConfig标注了@Configuration，表示它是一个配置类，因为我们创
 使用@ComponentScan非常方便，但是，我们也要特别注意包的层次结构。通常来说，**启动配置AppConfig位于自定义的顶层包，其它Bean按类别放入子包**。
 
 ## 定制Bean
+
+- Spring默认使用Singleton创建Bean，也可指定Scope为Prototype；
+- 可将相同类型的Bean注入List；
+- 可用@Autowired(required=false)允许可选注入；
+- 可用带@Bean标注的方法创建Bean；
+- 可使用@PostConstruct和@PreDestroy对Bean进行初始化和清理；
+- 相同类型的Bean只能有一个指定为@Primary，其它必须用@Quanlifier("beanName")指定别名；
+- 注入时，可通过别名@Quanlifier("beanName")指定某个Bean；
+- 可以定义FactoryBean来使用工厂模式创建Bean。
+
+对于Spring容器来说，当我们把一个Bean标记为@Component后，它就会自动为我们创建一个单例（Singleton），即容器初始化时创建Bean，容器关闭前销毁Bean。在容器运行期间，我们调用getBean(Class)获取到的Bean总是同一个实例。还有一种Bean，我们每次调用getBean(Class)，容器都返回一个新的实例，这种Bean称为Prototype（原型），它的生命周期显然和Singleton不同。声明一个Prototype的Bean时，需要添加一个额外的@Scope注解。
+
+```Java
+@Component
+@Scope(ConfigurableBeanFactory.SCOPE_PROTOTYPE) // @Scope("prototype")
+public class MailSession {
+    ...
+}
+```
+
+有些时候，我们会有一系列接口相同，不同实现类的Bean。例如，注册用户时，我们要对email、password和name这3个变量进行验证。为了便于扩展，我们先定义验证接口。然后，分别使用3个Validator对用户参数进行验证。最后，我们通过一个Validators作为入口进行验证。注意到Validators被注入了一个`List<Validator>`，Spring会自动把所有类型为Validator的Bean装配为一个List注入进来，这样一来，我们每新增一个Validator类型，就自动被Spring装配到Validators中了，非常方便。
+
+```Java
+public interface Validator {
+    void validate(String email, String password, String name);
+}
+
+@Component
+public class EmailValidator implements Validator {
+    public void validate(String email, String password, String name) {
+        if (!email.matches("^[a-z0-9]+\\@[a-z0-9]+\\.[a-z]{2,10}$")) {
+            throw new IllegalArgumentException("invalid email: " + email);
+        }
+    }
+}
+
+@Component
+public class PasswordValidator implements Validator {
+    public void validate(String email, String password, String name) {
+        if (!password.matches("^.{6,20}$")) {
+            throw new IllegalArgumentException("invalid password");
+        }
+    }
+}
+
+@Component
+public class NameValidator implements Validator {
+    public void validate(String email, String password, String name) {
+        if (name == null || name.isBlank() || name.length() > 20) {
+            throw new IllegalArgumentException("invalid name: " + name);
+        }
+    }
+}
+
+@Component
+public class Validators {
+    @Autowired
+    List<Validator> validators;
+
+    public void validate(String email, String password, String name) {
+        for (var validator : this.validators) {
+            validator.validate(email, password, name);
+        }
+    }
+}
+```
+
+因为Spring是通过扫描classpath获取到所有的Bean，而List是有序的，要指定List中Bean的顺序，可以加上@Order注解。
+
+```Java
+@Component
+@Order(1)
+public class EmailValidator implements Validator {
+    ...
+}
+
+@Component
+@Order(2)
+public class PasswordValidator implements Validator {
+    ...
+}
+
+@Component
+@Order(3)
+public class NameValidator implements Validator {
+    ...
+}
+```
+
+默认情况下，当我们标记了一个@Autowired后，Spring如果没有找到对应类型的Bean，它会抛出NoSuchBeanDefinitionException异常。可以给@Autowired增加一个required = false的参数。这个参数告诉Spring容器，如果找到一个类型为ZoneId的Bean，就注入，如果找不到，就忽略。**这种方式非常适合有定义就使用定义，没有就使用默认值的情况**。
+
+```Java
+@Component
+public class MailService {
+    @Autowired(required = false)
+    ZoneId zoneId = ZoneId.systemDefault();
+    ...
+}
+```
+
+如果一个Bean不在我们自己的package管理之类，例如ZoneId，如何创建它。答案是我们自己在@Configuration类中编写一个Java方法创建并返回它，**注意给方法标记一个@Bean注解**。**Spring对标记为@Bean的方法只调用一次，因此返回的Bean仍然是单例**。
+
+```Java
+@Configuration
+@ComponentScan
+public class AppConfig {
+    // 创建一个Bean:
+    @Bean
+    ZoneId createZoneId() {
+        return ZoneId.of("Z");
+    }
+}
+```
+
+有些时候，一个Bean在注入必要的依赖后，需要进行初始化（监听消息等）。在容器关闭时，有时候还需要清理资源（关闭连接池等）。我们通常会定义一个init()方法进行初始化，定义一个shutdown()方法进行清理，然后，引入JSR-250定义的Annotation。在Bean的初始化和清理方法上标记@PostConstruct和@PreDestroy。Spring容器会对下述Bean做如下初始化流程：调用构造方法创建MailService实例；根据@Autowired进行注入；调用标记有@PostConstruct的init()方法进行初始化。而销毁时，容器会首先调用标记有@PreDestroy的shutdown()方法。Spring只根据Annotation查找**无参数**方法，对方法名不作要求。
+
+```XML
+<dependency>
+    <groupId>javax.annotation</groupId>
+    <artifactId>javax.annotation-api</artifactId>
+    <version>1.3.2</version>
+</dependency>
+```
+
+```Java
+@Component
+public class MailService {
+    @Autowired(required = false)
+    ZoneId zoneId = ZoneId.systemDefault();
+
+    @PostConstruct
+    public void init() {
+        System.out.println("Init mail service with zoneId = " + this.zoneId);
+    }
+
+    @PreDestroy
+    public void shutdown() {
+        System.out.println("Shutdown mail service");
+    }
+}
+```
