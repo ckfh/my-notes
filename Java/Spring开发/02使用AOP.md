@@ -227,3 +227,260 @@ Spring也提供其它方法来装配AOP，但都没有使用AspectJ注解的方�
 在Spring容器中使用AOP非常简单，只需要定义执行方法，并用AspectJ的注解标注应该在何处触发并执行。Spring通过CGLIB动态创建子类等方式来实现AOP代理模式，大大简化了代码。
 
 ## 使用注解装配AOP
+
+在实际项目中，上述写法其实很少使用。我们在使用AOP时，要注意到虽然Spring容器可以把指定的方法通过AOP规则装配到指定的Bean的指定方法前后，但是，如果自动装配时，因为不恰当的范围，容易导致意想不到的结果，即很多不需要AOP代理的Bean也被自动代理了，并且，后续新增的Bean，如果不清楚现有的AOP装配规则，容易被强迫装配。
+
+使用AOP时，被装配的Bean最好自己能清清楚楚地知道自己被安排了。例如，Spring提供的@Transactional就是一个非常好的例子。如果我们自己写的Bean希望在一个数据库事务中被调用，就标注上@Transactional：
+
+```Java
+@Component
+public class UserService {
+    // 有事务:
+    @Transactional
+    public User createUser(String name) {
+        ...
+    }
+
+    // 无事务:
+    public boolean isValidName(String name) {
+        ...
+    }
+
+    // 有事务:
+    @Transactional
+    public void updateUser(User user) {
+        ...
+    }
+}
+```
+
+或者直接在class级别注解，表示“所有public方法都被安排了”：
+
+```Java
+@Component
+@Transactional
+public class UserService {
+    ...
+}
+```
+
+通过@Transactional，某个方法是否启用了事务就一清二楚了。**因此，装配AOP的时候，使用注解是最好的方式**。
+
+为了监控应用程序的性能，我们定义一个性能监控的注解：
+
+```Java
+@Target(ElementType.METHOD)
+@Retention(RetentionPolicy.RUNTIME)
+public @interface MetricTime {
+    String value();
+}
+```
+
+在需要被监控的关键方法上标注该注解：
+
+```Java
+@Component
+public class UserService {
+    // 监控UserService.register()方法性能
+    @MetricTime("register")
+    public User register(String email, String password, String name) {
+        ...
+    }
+    ...
+}
+```
+
+然后，我们定义MetricAspect：
+
+```Java
+@Aspect
+@Component
+public class MetricAspect {
+    @Around("@annotation(metricTime)")
+    public Object metric(ProceedingJoinPoint joinPoint, MetricTime metricTime) throws Throwable {
+        String name = metricTime.value();
+        long start = System.currentTimeMillis();
+        try {
+            // 调用原始实例逻辑
+            return joinPoint.proceed();
+        } finally {
+            long t = System.currentTimeMillis() - start;
+            // 在其之后输出日志
+            System.err.println("[Metrics] " + name + ": " + t + "ms");
+        }
+    }
+}
+```
+
+注意metric()方法标注了@Around("@annotation(metricTime)")，它的意思是，符合条件的目标方法是带有@MetricTime注解的方法，因为metric()方法参数类型是MetricTime（注意参数名是metricTime不是MetricTime），我们通过它获取性能监控的名称。
+
+![注解](./image/使用AOP-注解.jpg)
+
+有了@MetricTime注解，再配合MetricAspect，任何Bean，只要方法标注了@MetricTime注解，就可以自动实现性能监控。
+
+使用注解实现AOP需要先定义注解，然后使用@Around("@annotation(name)")实现装配；**使用注解既简单，又能明确标识AOP装配，是使用AOP推荐的方式**。
+
+## AOP避坑指南（有关Spring使用CGLIB创建普通类的代理类的坑）
+
+无论是使用AspectJ语法，还是配合Annotation，使用AOP，实际上就是让Spring自动为我们创建一个Proxy，使得调用方能无感知地调用指定方法，但运行期却动态“织入”了其它逻辑，因此，AOP本质上就是一个代理模式。
+
+因为Spring使用了CGLIB来实现运行期动态创建普通类的Proxy，如果我们没能深入理解其运行原理和实现机制，就极有可能遇到各种诡异的问题。
+
+```Java
+@Component
+public class UserService {
+    // 成员变量:
+    public final ZoneId zoneId = ZoneId.systemDefault();
+
+    // 构造方法:
+    public UserService() {
+        System.out.println("UserService(): init...");
+        System.out.println("UserService(): zoneId = " + this.zoneId);
+    }
+
+    // public方法:
+    public ZoneId getZoneId() {
+        return zoneId;
+    }
+
+    // public final方法:
+    public final ZoneId getFinalZoneId() {
+        return zoneId;
+    }
+}
+
+@Component
+public class MailService {
+    @Autowired
+    UserService userService;
+
+    public String sendMail() {
+        ZoneId zoneId = userService.zoneId; // 直接访问字段获取值
+        String dt = ZonedDateTime.now(zoneId).toString();
+        return "Hello, it is " + dt;
+    }
+}
+// 由于UserService是一个普通类，因此Spring会使用CGLIB来为其创建代理类。
+// 如果某个bean被装配了AOP，那么后续在注入和获取该bean时提供的都是Spring提供的代理bean。
+@Aspect
+@Component
+public class LoggingAspect {
+    @Before("execution(public * com..*.UserService.*(..))")
+    public void doAccessCheck() {
+        System.err.println("[Before] do access check...");
+    }
+}
+```
+
+深入理解Spring使用CGLIB生成普通类的Proxy的原理：
+
+  1. 第一步，正常创建一个UserService的原始实例，这是通过反射调用构造方法实现的，它的行为和我们预期的完全一致（UserService作为组件肯定是会被容器初始化的）；
+  2. 第二步，通过CGLIB创建一个UserService的子类，并引用了原始实例和LoggingAspect（可以参考装配AOP章节里UserServiceAopProxy的代码）。
+
+如果我们观察Spring创建的AOP代理，它的类名总是类似UserService$$EnhancerBySpringCGLIB$$1c76af9d（你没看错，Java的类名实际上允许$字符）。为了让调用方获得UserService的引用，它必须继承自UserService。然后，该代理类会覆写所有public和protected方法，并在内部将调用委托给原始的UserService实例。
+
+这里出现了两个UserService实例：一个是我们代码中定义的原始实例，它的成员变量已经按照我们预期的方式被初始化完成；第二个UserService实例实际上类型是UserService$$EnhancerBySpringCGLIB，它引用了原始的UserService实例。
+
+```Java
+// 原始实例
+UserService original = new UserService();
+// 引用了原始实例和切面实例的代理实例
+UserService$$EnhancerBySpringCGLIB proxy = new UserService$$EnhancerBySpringCGLIB();
+proxy.target = original;
+proxy.aspect = ...
+```
+
+注意到这种情况仅出现在启用了AOP的情况，此刻，从ApplicationContext中获取的UserService实例是proxy，注入到MailService中的UserService实例也是proxy。
+
+最终的问题来了：proxy实例的成员变量，也就是从UserService继承的zoneId，它的值是null。
+
+```Java
+// 原因在于，UserService成员变量的初始化在UserService$$EnhancerBySpringCGLIB中，并未执行。
+// 原因是，没必要初始化proxy的成员变量，因为proxy的目的是代理方法。
+public class UserService {
+    public final ZoneId zoneId = ZoneId.systemDefault();
+    ...
+}
+// 实际上，成员变量的初始化是在构造方法中完成的。这是我们看到的代码
+public class UserService {
+    public final ZoneId zoneId = ZoneId.systemDefault();
+    public UserService() {
+    }
+}
+// 这是编译器实际编译的代码
+public class UserService {
+    public final ZoneId zoneId;
+    public UserService() {
+        super(); // 构造方法的第一行代码总是调用super()
+        zoneId = ZoneId.systemDefault(); // 继续初始化成员变量
+    }
+}
+```
+
+然而，对于Spring通过CGLIB动态创建的UserService$$EnhancerBySpringCGLIB代理类，它的构造方法中，并未调用super()，因此，从父类继承的成员变量，包括final类型的成员变量，统统都没有初始化。
+
+这是因为自动加super()的功能是Java编译器实现的，它发现你没加，就自动给加上，发现你加错了，就报编译错误。但实际上，如果直接构造字节码，一个类的构造方法中，不一定非要调用super()。Spring使用CGLIB构造的Proxy类，是直接生成字节码，并没有源码-编译-字节码这个步骤，**因此：Spring通过CGLIB创建的代理类，不会初始化代理类自身继承的任何成员变量，包括final类型的成员变量**！
+
+简单来说就是Spring通过CGLIB对普通类创建的代理类，它不会去初始化代理类自身继承的任何成员变量（包括final类型的成员变量，注意分清定义变量和初始化变量的概念），**因为代理的目的是代理方法**，另外即使说被代理类的成员变量是通过构造方法被初始化，但是在代理类的构造方法当中也不一定会去调用super()方法从而导致继承的被代理类的成员变量始终没有进行初始化操作（因为会使用代理类的实例，因此一定会调用代理类的构造方法）。
+
+如果没有启用AOP，注入的是原始的UserService实例，那么一切正常，因为UserService实例的zoneId字段已经被正确初始化了。如果启动了AOP，注入的是代理后的UserService$$EnhancerBySpringCGLIB实例，那么问题大了：获取的UserService$$EnhancerBySpringCGLIB实例的zoneId字段，永远为null。
+
+修复很简单，只需要把直接访问字段的代码，改为通过方法访问，**因为原始实例是正常实例化的，因此通过原始实例去访问的成员变量肯定是正常初始化完毕的**：
+
+```Java
+@Component
+public class MailService {
+    @Autowired
+    UserService userService;
+
+    public String sendMail() {
+        // 不要直接访问UserService的字段:
+        // 调用代理类覆写的getZoneId()方法，继而调用被代理类的getZoneId()方法
+        ZoneId zoneId = userService.getZoneId();
+        ...
+    }
+}
+// 无论注入的UserService是原始实例还是代理实例，getZoneId()都能正常工作，因为代理类会覆写getZoneId()方法，并将其委托给原始实例。
+public UserService$$EnhancerBySpringCGLIB extends UserService {
+    UserService target = ...
+    ...
+    @Overrided
+    public ZoneId getZoneId() {
+        return target.getZoneId();
+    }
+}
+```
+
+注意到我们还给UserService添加了一个public+final的方法，如果在MailService中，调用的不是getZoneId()，而是getFinalZoneId()，又会出现NullPointerException，**这是因为，代理类无法覆写final方法（这一点绕不过JVM的ClassLoader检查），该方法返回的是代理类的zoneId字段，即null**。
+
+```Java
+// UserService
+public ZoneId getZoneId() {
+    return this.zoneId;
+}
+// UserService$$EnhancerBySpringCGLIB
+public ZoneId getZoneId() {
+    return this.target.getZoneId(); // 覆写后调用原始实例的方法访问被正常初始化的成员变量
+}
+// UserService
+public final ZoneId getFinalZoneId() {
+    return this.zoneId;
+}
+// UserService$$EnhancerBySpringCGLIB
+public final ZoneId getFinalZoneId() {
+    return this.zoneId; // 无法覆写从而导致访问的是自身继承下来的成员变量
+}
+```
+
+实际上，如果我们加上日志，Spring在启动时会打印一个警告：日志大意就是，因为被代理的UserService有一个final方法getFinalZoneId()，这会导致其他Bean如果调用此方法，无法将其代理到真正的原始实例，从而可能发生NPE异常。
+
+因此，正确使用AOP，我们需要一个避坑指南，这样才能保证有没有AOP，代码都能正常工作：
+
+  1. 访问被注入的Bean时，**总是调用方法而非直接访问字段**；
+  2. 编写Bean时，**如果可能会被代理，就不要编写public final方法**。
+
+由于Spring通过CGLIB实现代理类，我们要避免直接访问Bean的字段，以及由final方法带来的“未代理”问题。遇到CglibAopProxy的相关日志，务必要仔细检查，防止因为AOP出现NPE异常。
+
+**如果一个Bean不允许任何AOP代理，应该怎么做来“保护”自己在运行期不会被代理**。将类设置为final的防止cglib创建Proxy，并且不继承接口防止JDK自带的动态代理。
+
+为什么Spring刻意不初始化Proxy继承的字段。[参考讨论](https://www.liaoxuefeng.com/wiki/1252599548343744/1339039378571298)
