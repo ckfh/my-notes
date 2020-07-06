@@ -6,6 +6,76 @@
 
 Spring的核心就是提供了一个**IoC容器**，**它可以管理所有轻量级的JavaBean组件，提供的底层服务包括组件的生命周期管理、配置和组装服务、AOP支持，以及建立在AOP基础上的声明式事务服务等**。
 
+个人对于IoC容器的理解：给我的最大感受就是在你写组件的那一个时刻，你不需要去纠结某个将被调用的实例该如何去创建，你就定义好字段或者参数假设自己已经拥有了这个实例，直接用就完事了；比如说我正在编写一个组件用于访问数据库，那我需要有一个datasource的实例对象来帮助实现功能，我“此刻”在编写这个组件的时候，我可以选择将其定义为成员属性或者方法参数，然后直接进行调用即可；个人感觉本质上就是把实例创建的及时必要性给打破了，你可以提前或往后去new这个实例。然后把这个实例交给容器，让容器帮助你注入到需要该实例的地方。有点类似于先定义好成员属性，创建对象后使用相应的setXxx()方法给这个属性进行实例注入，然后调用相应的业务逻辑。但是这个步骤容器也帮助我们完成了。我们写XML配置文件实际上就是在写前面的过程；把new的过程抽取出来，new是肯定要new的，new完以后通过字段/set方法/构造来把new的对象传进去。只不过我们把new的过程交给了容器去做，写XML还算是让我们把new/传值的操作用非Java语言写一遍，但是注解就彻彻底底把这个过程都帮我们省略掉了，当然在创建第三方bean的时候还是写了new的过程，但是传值就不需要了。把new后的对象交给容器去注入。
+你可以想象在主方法里写一大堆的new以及各种注入操作，还不如统一到配置文件里，或者说就不需要，让容器去完成就好了。高效开发/便捷复用。
+
+```Java
+// 此前开发
+public class UserDaoImpl {
+    HikariConfig config = new HikariConfig();
+    DataSource dataSource = new HikariDataSource(config);
+    public void register() {
+        try (Connection conn = this.dataSource.getConnection()) {
+            ...
+        }
+    }
+}
+// 后来开发
+public class UserDaoImpl {
+    DataSource dataSource;
+
+    public void setDataSource(DataSource dataSource) {
+        this.dataSource = dataSource;
+    }
+
+    public void register() {
+        try (Connection conn = this.dataSource.getConnection()) {
+            ...
+        }
+    }
+}
+public class Main {
+    public static void main(String[] args) {
+        HikariConfig config = new HikariConfig();
+        DataSource dataSource = new HikariDataSource(config);
+        UserDaoImpl userDao = new UserDaoImpl();
+        userDao.setDataSource(dataSource);
+        userDao.register();
+    }
+}
+// 借助框架开发
+public class UserDaoImpl {
+    DataSource dataSource;
+
+    public void setDataSource(DataSource dataSource) {
+        this.dataSource = dataSource;
+    }
+
+    public void register() {
+        try (Connection conn = this.dataSource.getConnection()) {
+            ...
+        }
+    }
+}
+public class Main {
+    public static void main(String[] args) {
+        UserDaoImpl userDao = context.getBean(UserDaoImpl.class);
+        userDao.register();
+    }
+}
+```
+
+```Java
+// IoC容器把以下的这些大致过程都帮助我们实现好了
+User user = new User(24);
+user.age = 24;
+user.setAge(24);
+Dog dog = new Dog();
+user.setDog(dog);
+// 我们直接获取到实例，然后调用业务逻辑即可
+user.walkWithDog();
+```
+
 ## IoC原理
 
 IoC全称Inversion of Control，直译为控制反转。在理解IoC之前，我们先看看通常的Java组件是如何协作的。

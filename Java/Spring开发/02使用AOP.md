@@ -6,6 +6,8 @@ AOP是Aspect Oriented Programming，即面向切面编程。
 
 要理解AOP的概念，我们先用OOP举例，比如一个业务组件BookService，它有几个业务方法：createBook：添加新的Book；updateBook：修改Book；deleteBook：删除Book。
 
+个人对于AOP的理解：让我们在不改动核心业务逻辑代码片段的前提下，扩充业务逻辑的功能。这些功能指代那些公共需求：安全检查/日志记录等。本质上就是一个代理模式，在业务逻辑前后增加我们想要的逻辑。特别是对于那些第三方jar包，我们肯定是无法对里面的代码逻辑进行修改的，但我们又希望调用时能够产生日志记录，就可以使用AOP来帮助我们完成这项任务。
+
 ```Java
 public class BookService {
     // 对每个业务方法，例如，createBook()，除了业务逻辑，还需要安全检查、日志记录和事务处理，它的代码像这样：
