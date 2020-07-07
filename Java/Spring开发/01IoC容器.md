@@ -639,6 +639,8 @@ public class AppConfig {
 
 我们在设计模式的工厂方法中讲到，很多时候，可以通过工厂模式创建对象。Spring也提供了工厂模式，允许定义一个工厂，然后由工厂创建真正的Bean。
 
+关于在什么时候去使用FactoryBean，可参考[掘金](https://www.jianshu.com/p/6f0a59623090)。简单来说就是设计到复杂bean的创建时，我们可以考虑使用FactoryBean。
+
 ```Java
 // 用工厂模式创建Bean需要实现FactoryBean接口。
 // 当一个Bean实现了FactoryBean接口后，Spring会先实例化这个工厂，然后调用getObject()创建真正的Bean。
