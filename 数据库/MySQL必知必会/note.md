@@ -25,6 +25,8 @@ HELP SHOW;
 
 ## 第4章：检索数据
 
+> DISTINCT/LIMIT
+
 ```SQL
 # 返回不同（唯一）的行
 # 无法部分使用DISTINCT关键字，它将应用于所有列而不仅是前置它的列
@@ -78,3 +80,201 @@ LIMIT 1;
 ```
 
 ## 第6章：过滤数据
+
+> BETWEEN
+
+注意：MySQL执行匹配时默认不区分大小写，所以fuses与Fuses匹配。
+
+```SQL
+# 范围匹配
+SELECT prod_name, prod_price
+FROM products
+WHERE prod_price BETWEEN 5 AND 10;
+```
+
+## 第7章：数据过滤
+
+> IN
+
+任何时候使用具有AND和OR操作符的WHERE子句，都应该使用圆括号明确地分组操作符。不要过分依赖默认计算次序，即使它确实是你想要地东西也是如此。使用圆括号没有什么坏处，它能消除歧义。
+
+```SQL
+# IN操作符其功能与OR相当，建议优先选用IN操作符
+SELECT prod_name, prod_price
+FROM products
+WHERE vend_id IN (1002, 1003)
+ORDER BY prod_name;
+```
+
+MySQL支持使用NOT对IN、BETWEEN和EXISTS子句取反，这与多数其它DBMS允许使用NOT对各种条件取反有很大的区别。
+
+## 第8章：用通配符进行过滤
+
+根据MySQL的配置方式，搜索可以是区分大小写的。
+
+```SQL
+# %表示任何字符出现的任意次数，在此处将检索任意以jet起头的词：
+SELECT prod_id, prod_name
+FROM products
+WHERE prod_name LIKE 'jet%';
+# 匹配任何位置包含文本anvil的值：
+SELECT prod_id, prod_name
+FROM products
+WHERE prod_name LIKE '%anvil%';
+# 找出以s起头以e结尾的所有产品：
+SELECT prod_name
+FROM products
+WHERE prod_name LIKE 's%e';
+```
+
+%代表搜索模式中给定位置的0个、1个或多个字符，但'%'也不能匹配NULL值。
+
+尾空格可能会干扰通配符匹配。例如，在保存词anvil时，如果它后面有一个或多个空格，则'%anvil'将不会匹配它们，因为在最后的l后有多余的字符。解决这个问题的一个简单的办法是在搜索模式最后附加一个%。一个更好的办法是使用函数去掉首尾空格。
+
+```SQL
+# _通配符只匹配单个字符：
+SELECT prod_id, prod_name
+FROM products
+WHERE prod_name LIKE '_ ton anvil';
+```
+
+使用通配符要记住的技巧：
+
+- 不要过度使用通配符。如果其它操作符能达到相同的目的，应该使用其它操作符。
+- 在确实需要使用通配符时，除非绝对有必要，否则不要把它们用在搜索模式的开始处。把通配符置于搜索模式的开始处，搜索起来是最慢的。
+- 仔细注意通配符的位置。如果放错地方，可能不会返回想要的数据。
+
+## 第9章：用正则表达式进行搜索
+
+> REGEXP
+
+MySQL仅支持多数正则表达式实现的一个很小的子集。
+
+```SQL
+# .在正则表达式中表示匹配任意一个字符：
+SELECT prod_name
+FROM products
+WHERE prod_name REGEXP '.000'
+ORDER BY prod_name;
+# REGEXP在列值内进行匹配，只要列值中出现文本'1000'就会返回该行：
+SELECT prod_name
+FROM products
+WHERE prod_name REGEXP '1000'
+ORDER BY prod_name;
+# LIKE会匹配整个列，即使列值中出现文本'1000'也不会返回该行：
+SELECT prod_name
+FROM products
+WHERE prod_name LIKE '1000'
+ORDER BY prod_name;
+# 使用BINARY关键为正则表达式匹配区分大小写：
+SELECT prod_name
+FROM products
+WHERE prod_name REGEXP BINARY 'JetPack .000'
+ORDER BY prod_name;
+# 使用正则表达式进行OR匹配：
+SELECT prod_name
+FROM products
+WHERE prod_name REGEXP '1000|2000'
+ORDER BY prod_name;
+# 匹配几个字符之一：
+SELECT prod_name
+FROM products
+WHERE prod_name REGEXP '[123] Ton'
+ORDER BY prod_name;
+# 匹配范围：
+SELECT prod_name
+FROM products
+WHERE prod_name REGEXP '[1-5] Ton'
+ORDER BY prod_name;
+# 匹配特殊字符需要进行转义，MySQL要求两个反斜杠：
+SELECT vend_name
+FROM vendors
+WHERE vend_name REGEXP '\\.'
+ORDER BY vend_name;
+# 匹配预定义好的字符集，[:digit:]同[0-9]：
+SELECT prod_name
+FROM products
+WHERE prod_name REGEXP '[[:digit:]] Ton'
+ORDER BY prod_name;
+# ^匹配串的开始，此处将找出以一个数（包括以小数点开始的数）开始的所有产品：
+SELECT prod_name
+FROM products
+WHERE prod_name REGEXP '^[0-9\\.]'
+ORDER BY prod_name;
+# 简单的正则表达式测试，匹配返回1，不匹配返回0：
+SELECT 'hello' REGEXP '[0-9]';
+```
+
+![匹配字符类](./image/匹配字符类.jpg)
+
+^的双重用途：^有两种用法。在集合中（用`[`和`]`定义），用它来否定该集合，否则，用来指串的开始处。
+
+使REGEXP起类似LIKE的作用：LIKE和REGEXP的不同在于，LIKE匹配整个串而REGEXP匹配子串。利用定位符，通过用^开始每个表达式，用$结束每个表达式，可以使REGEXP的作用与LIKE一样。
+
+## 第10章：创建计算字段
+
+> CONCAT/TRIM/NOW
+
+存储在表中的数据都不是应用程序所需要的。我们需要直接从数据库中检索出转换、计算或格式化过的数据；而不是检索出数据，然后再在客户机应用程序或报告程序中重新格式化。这就是计算字段发挥作用的所在了。计算字段并不实际存在于数据库表中。计算字段是运行时在SELECT语句内创建的。
+
+**能在数据库服务器完成的操作就交给数据库服务器来完成，在数据库服务器上完成这些操作比在客户机应用程序中完成要快得多，因为DBMS是设计来快速有效地完成这种处理的**。
+
+**多数DBMS使用+或||来实现拼接，MySQL则使用Concat()函数来实现。当把SQL语句转换成MySQL语句时一定要把这个区别铭记在心**。
+
+```SQL
+# 将两个列拼接起来并返回：
+SELECT CONCAT(vend_name, '(', vend_country, ')')
+FROM vendors
+ORDER BY vend_name;
+# 将值去除右空格后再进行拼接：
+SELECT CONCAT(RTRIM(vend_name), '(', RTRIM(vend_country), ')')
+FROM vendors
+ORDER BY vend_name;
+# 执行算数计算：
+SELECT prod_id,
+       quantity,
+       item_price,
+       quantity * item_price AS expanded_price
+FROM orderitems
+WHERE order_num = 20005;
+# 可以省略FROM子句以便简单地访问和处理表达式，比如利用NOW()函数返回当前日期和时间：
+SELECT NOW();
+```
+
+## 第11章：使用数据处理函数
+
+函数的可移植性没有SQL语句强，如果决定使用函数，应该保证做好代码注释，以便以后能确切地知道所编写SQL代码的含义。
+
+```SQL
+# 使用UPPER()函数将文本转换为大写：
+SELECT vend_name, UPPER(vend_name) AS vend_name_upcase
+FROM vendors
+ORDER BY vend_name;
+```
+
+![文本处理函数](./image/文本处理函数.jpg)
+
+![常用日期和时间处理函数](./image/常用日期和时间处理函数.jpg)
+
+**首先需要注意的是MySQL使用的日期格式。无论你什么时候指定一个日期，不管是插入或更新表值还是用WHERE子句进行过滤，日期必须为格式yyyy-mm-dd**。
+
+```SQL
+# 基本的日期比较：
+SELECT cust_id, order_num
+FROM orders
+WHERE order_date = '2005-09-01';
+# 由于order_date列的类型为datetime，为了明确比较的是日期，请使用DATE()函数：
+SELECT cust_id, order_num
+FROM orders
+WHERE DATE(order_date) = '2005-09-01';
+# 检索2005年9月下的所有订单：
+SELECT cust_id, order_num
+FROM orders
+WHERE DATE(order_date) BETWEEN '2005-09-01' AND '2005-09-30';
+# 使用YEAR()函数和MONTH()函数替代上述行为是更好的方式：
+SELECT cust_id, order_num
+FROM orders
+WHERE YEAR(order_date) = 2005 AND MONTH(order_date) = 9;
+```
+
+![数值处理函数](./image/数值处理函数.jpg)
