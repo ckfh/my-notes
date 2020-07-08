@@ -243,6 +243,8 @@ SELECT NOW();
 
 ## 第11章：使用数据处理函数
 
+> UPPER/DATE/YEAR/MONTH
+
 函数的可移植性没有SQL语句强，如果决定使用函数，应该保证做好代码注释，以便以后能确切地知道所编写SQL代码的含义。
 
 ```SQL
@@ -278,3 +280,71 @@ WHERE YEAR(order_date) = 2005 AND MONTH(order_date) = 9;
 ```
 
 ![数值处理函数](./image/数值处理函数.jpg)
+
+## 第12章：汇总数据
+
+> AVG/COUNT/MAX/MIN/SUM
+
+这些函数是高效设计的，它们返回结果一般比你在自己的客户机应用程序中计算要快得多。
+
+```SQL
+# 如果指定列名则值为空的行会被忽略，否则就和COUNT(*)没什么区别了：
+SELECT COUNT(cust_email) AS num_cust
+FROM customers;
+# 计算order_num=20005的所有行中的quantity之和：
+SELECT SUM(quantity) AS items_ordered
+FROM orderitems
+WHERE order_num = 20005;
+# 统计某个物品订单中所有物品价钱之和：
+SELECT SUM(item_price * quantity) AS total_price
+FROM orderitems
+WHERE order_num = 20005;
+# 只考虑不同价格的平均值：
+SELECT AVG(DISTINCT prod_price) AS avg_price
+FROM products
+WHERE vend_id = 1003;
+```
+
+## 第13章：分组数据
+
+> GROUP BY/WITH ROLLUP
+
+```SQL
+# 按vend_id排序并分组数据：
+SELECT vend_id, COUNT(*) AS num_prods
+FROM products
+GROUP BY vend_id;
+# 使用WITH ROLLUP关键字汇总分组值：
+SELECT vend_id, COUNT(*) AS num_prods
+FROM products
+GROUP BY vend_id WITH ROLLUP;
+```
+
+在具体使用GROUP BY子句前，需要知道一些重要的规定:
+
+- GROUP BY子句可以包含任意数目的列。这使得能对分组进行嵌套，为数据分组提供更细致的控制。
+- 如果在GROUP BY子句中嵌套了分组，数据将在最后规定的分组上进行汇总。换句话说，在建立分组时，指定的所有列都一起计算（所以不能从个别的列取回数据）。
+- GROUP BY子句中列出的每个列都必须是检索列或有效的表达式（但不能是聚集函数）。如果在SELECT中使用表达式，则必须在GROUP BY子句中指定相同的表达式。不能使用别名。
+- **除聚集计算语句外，SELECT语句中的每个列都必须在GROUP BY子句中给出**。
+- 如果分组列中具有NULL值，则NULL将作为一个分组返回。如果列中有多行NULL值，它们将分为一组。
+- GROUP BY子句必须出现在WHERE子句之后，ORDER BY子句之前，**先过滤行再分组后排序**。
+
+**WHERE过滤指定的是行而不是分组。事实上，WHERE没有分组的概念**。
+
+MySQL为了过滤分组提供了另外的子句，那就是HAVING子句。HAVING非常类似于WHERE。事实上，目前为止所学过的所有类型的WHERE子句都可以用HAVING来替代（替代指的是和WHERE相关的操作HAVING都适用，比如通配符、操作符）。**唯一的差别是WHERE过滤行，而HAVING过滤分组**。
+
+```SQL
+# 过滤出两个以上的订单分组：
+SELECT cust_id, COUNT(*) AS orders
+FROM orders
+GROUP BY cust_id
+HAVING COUNT(*) >= 2;
+# 列出具有2个含以上、价格为10含以上的产品供应商：
+SELECT vend_id, COUNT(*) AS num_prods
+FROM products
+WHERE prod_price >= 10
+GROUP BY vend_id
+HAVING COUNT(*) >= 2;
+```
+
+**WHERE在数据分组前进行过滤，HAVING在数据分组后进行过滤**。这是一个重要的区别，WHERE排除的行不包括在分组中。这可能会改变计算值，从而影响HAVING子句中基于这些值过滤掉的分组。
