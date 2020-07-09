@@ -1,6 +1,6 @@
 # 泛型
 
-泛型是一种“代码模板”，可以用一套代码套用各种类型。
+泛型是一种“代码模板”，可以用一套代码**套用各种类型**。
 
 ## 什么是泛型
 
@@ -100,7 +100,7 @@ public class Pair<T> {
 
 ## 擦拭法
 
-Java语言的泛型实现方式是**擦拭法**（Type Erasure）。所谓擦拭法是指，虚拟机对泛型其实一无所知，所有的工作都是编译器做的。
+Java语言的泛型实现方式是**擦拭法**。所谓擦拭法是指，虚拟机对泛型其实一无所知，所有的工作都是编译器做的。
 
 ```Java
 // 这是编译器看到的代码：
@@ -151,7 +151,7 @@ String first = (String) p.getFirst();
 String last = (String) p.getLast();
 ```
 
-所以，Java的泛型是由编译器在编译时实行的，编译器内部永远把所有类型T视为Object处理，但是，在需要转型的时候，编译器会根据T的类型自动为我们实行安全地强制转型。
+所以，Java的泛型是由编译器在编译时实行的，编译器内部永远把所有类型T视为Object处理，但是，在需要转型的时候，编译器会根据T的类型自动为我们实行安全的强制转型。
 
 了解了Java泛型的实现方式——擦拭法，我们就知道了Java泛型的局限：
 
@@ -197,7 +197,7 @@ public Pair(Class<T> clazz) {
 Pair<String> pair = new Pair<>(String.class);
 ```
 
-有些时候，一个看似正确定义的方法会无法通过编译，编译器会阻止一个实际上会变成覆写的泛型方法定义。
+有些时候，一个看似正确定义的方法会无法通过编译，编译器会**阻止一个实际上会变成覆写的泛型方法定义**。
 
 ```Java
 public class Pair<T> {
@@ -213,3 +213,39 @@ public class Pair<T> {
     }
 }
 ```
+
+一个类可以继承自一个泛型类。
+
+```Java
+// 例如：父类的类型是Pair<Integer>，子类的类型是IntPair，可以这么继承：
+public class IntPair extends Pair<Integer> {
+}
+// 使用的时候，因为子类IntPair并没有泛型类型，所以，正常使用即可：
+IntPair ip = new IntPair(1, 2);
+```
+
+前面讲了，我们无法获取`Pair<T>`的T类型，即给定一个变量`Pair<Integer> p`，无法从p中获取到Integer类型。但是，**在父类是泛型类型的情况下，编译器就必须把类型T（对IntPair来说，也就是Integer类型）保存到子类的class文件中，不然编译器就不知道IntPair只能存取Integer这种类型**。
+
+在继承了泛型类型的情况下，子类可以获取父类的泛型类型。
+
+```Java
+public class Main {
+    public static void main(String[] args) {
+        Class<IntPair> clazz = IntPair.class;
+        Type t = clazz.getGenericSuperclass();
+        if (t instanceof ParameterizedType) {
+            ParameterizedType pt = (ParameterizedType) t;
+            Type[] types = pt.getActualTypeArguments(); // 可能有多个泛型类型
+            Type firstType = types[0];                  // 取第一个泛型类型
+            Class<?> typeClass = (Class<?>) firstType;
+            System.out.println(typeClass);              // Integer
+        }
+    }
+}
+```
+
+因为Java引入了泛型，所以，只用Class来标识类型已经不够了。实际上，Java的类型系统结构如下：
+
+<img src="./image/类型系统结构.jpg"/>
+
+## extends通配符
