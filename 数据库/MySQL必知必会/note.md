@@ -54,7 +54,7 @@ FROM learn_mysql.products;
 
 关系数据库设计理论认为，如果不明确规定排序顺序，则不应该假定检索出的数据的顺序有意义。
 
-**MySQL和大多数数据库管理系统默认A被视为与a相同。**数据库管理员能够在需要时改变这种行为，但是你无法依赖ORDER BY子句来改变这种排序顺序。
+**MySQL和大多数数据库管理系统默认A被视为与a相同**。数据库管理员能够在需要时改变这种行为，但是你无法依赖ORDER BY子句来改变这种排序顺序。
 
 ```SQL
 # 通常，ORDER BY子句中使用的列将是为显示所选择的列
@@ -310,7 +310,7 @@ WHERE vend_id = 1003;
 > GROUP BY/WITH ROLLUP
 
 ```SQL
-# 按vend_id排序并分组数据：
+# 按vend_id分组数据：
 SELECT vend_id, COUNT(*) AS num_prods
 FROM products
 GROUP BY vend_id;
@@ -348,3 +348,67 @@ HAVING COUNT(*) >= 2;
 ```
 
 **WHERE在数据分组前进行过滤，HAVING在数据分组后进行过滤**。这是一个重要的区别，WHERE排除的行不包括在分组中。这可能会改变计算值，从而影响HAVING子句中基于这些值过滤掉的分组。
+
+一般在使用GROUP BY子句时，应该也给出ORDER BY子句。这是保证数据正确排序的唯一方法。**千万不要仅依赖GROUP BY排序数据**。
+
+```SQL
+# 检索总计订单价格大于等于50的订单的订单号和总计订单价格：
+SELECT order_num, SUM(quantity * item_price) AS ordertotal
+FROM orderitems
+GROUP BY order_num
+HAVING SUM(quantity * item_price) >= 50;
+# 按总计订单价格排序输出：
+SELECT order_num, SUM(quantity * item_price) AS ordertotal
+FROM orderitems
+GROUP BY order_num
+HAVING SUM(quantity * item_price) >= 50
+ORDER BY ordertotal;
+```
+
+<img src="./image/SELECT子句及其顺序.jpg"/>
+
+## 第14章：使用子查询
+
+子查询最常见的使用是在WHERE子句的IN操作符中，以及用来填充计算列。
+
+```SQL
+# 检索订购物品TNT2的所有客户的ID：
+SELECT cust_id
+FROM orders
+WHERE order_num IN (SELECT order_num
+                    FROM orderitems
+                    WHERE prod_id = 'TNT2');
+# 检索上述客户ID的客户信息：
+SELECT cust_name, cust_contact
+FROM customers
+WHERE cust_id IN (SELECT cust_id
+                  FROM orders
+                  WHERE order_num IN (SELECT order_num
+                                      FROM orderitems
+                                      WHERE prod_id = 'TNT2'));
+# 检索顾客ID为10001的订单数：
+SELECT COUNT(*) AS orders
+FROM orders
+WHERE cust_id = 10001;
+# 检索所有顾客的姓名、州、及其所持有的订单数目：
+SELECT cust_name,
+       cust_state,
+       (SELECT COUNT(*)
+        FROM orders
+        WHERE orders.cust_id = customers.cust_id) AS orders
+FROM customers
+ORDER BY cust_name;
+# 上述圆括号中的子查询对检索出的每个客户执行一次，该子查询执行了5次，因为检索出了5个客户：
+SELECT COUNT(*) AS orders
+FROM orders
+WHERE cust_id = 10001;
+...
+...
+SELECT COUNT(*) AS orders
+FROM orders
+WHERE cust_id = 10005;
+```
+
+**逐渐增加子查询来建立查询**：首先，建立和测试最内层的查询。然后，用硬编码数据建立和测试外层查询，并且仅在确认它正常后才嵌入子查询。这时，再次测试它。对于要增加的每个查询，重复这些步骤。这样做仅给构造查询增加了一点点时间，但节省了以后（找出查询为什么不正常）的大量时间，并且极大地提高了查询一开始就正常工作的可能性。
+
+## 第15章：联结表
