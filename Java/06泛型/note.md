@@ -369,3 +369,112 @@ Pair<Object> p2 = null; // compile error!
 使用类似`<T extends Number>`**定义泛型类**时表示：泛型类型限定为Number以及Number的子类。
 
 ## super通配符
+
+```Java
+public class Main {
+    public static void main(String[] args) {
+        Pair<Number> p1 = new Pair<>(12.3, 4.56);
+        Pair<Integer> p2 = new Pair<>(123, 456);
+        setSame(p1, 100);
+        setSame(p2, 200);
+        System.out.println(p1.getFirst() + ", " + p1.getLast());
+        System.out.println(p2.getFirst() + ", " + p2.getLast());
+    }
+    // 形参类型Pair<? super Integer>表示可以接收所有泛型类型为Integer或Integer父类的Pair类型：
+    // 允许调用set(? super Integer)方法传入Integer的引用：
+    // 不允许调用get()方法获得Integer的引用：
+    static void setSame(Pair<? super Integer> p, Integer n) {
+        p.setFirst(n);
+        p.setLast(n);
+    }
+}
+
+public class Pair<T> {
+    private T first;
+    private T last;
+
+    public Pair(T first, T last) {
+        this.first = first;
+        this.last = last;
+    }
+
+    public T getFirst() {
+        return first;
+    }
+
+    public void setFirst(T first) {
+        this.first = first;
+    }
+
+    public T getLast() {
+        return last;
+    }
+
+    public void setLast(T last) {
+        this.last = last;
+    }
+}
+```
+
+<? extends T>类型和<? super T>类型的区别在于：
+
+- <? extends T>允许调用读方法T get()获取T的引用，但不允许调用写方法set(T)传入T的引用（传入null除外）（可读不可写）；
+- <? super T>允许调用写方法set(T)传入T的引用，但不允许调用读方法T get()获取T的引用（获取Object除外）（可写不可读）。
+
+```Java
+// Java标准库的Collections类定义的copy()方法：
+public class Collections {
+    // 把src的每个元素复制到dest中:
+    public static <T> void copy(List<? super T> dest, List<? extends T> src) {
+        for (int i=0; i<src.size(); i++) {
+            T t = src.get(i);
+            dest.add(t);
+        }
+    }
+}
+```
+
+这个copy()方法的定义就完美地展示了extends和super的意图：
+
+- copy()方法内部不会读取dest，因为不能调用dest.get()来获取T的引用；
+- copy()方法内部也不会修改src，因为不能调用src.add(T)。
+
+这是由编译器检查来实现的。如果在方法代码中意外修改了src，或者意外读取了dest，就会导致一个编译错误。
+
+```Java
+// 这个copy()方法的另一个好处是可以安全地把一个List<Integer>添加到List<Number>，但是无法反过来添加：
+// copy List<Integer> to List<Number> ok:
+List<Number> numList = ...;
+List<Integer> intList = ...;
+Collections.copy(numList, intList);
+
+// ERROR: cannot copy List<Number> to List<Integer>:
+Collections.copy(intList, numList);
+```
+
+而这些都是通过super和extends通配符，**并由编译器强制检查来实现的**。
+
+何时使用extends，何时使用super？为了便于记忆，我们可以用PECS原则：Producer Extends Consumer Super。
+
+即：如果需要返回T，它是生产者（Producer），要使用extends通配符；如果需要写入T，它是消费者（Consumer），要使用super通配符。
+
+```Java
+public class Collections {
+    public static <T> void copy(List<? super T> dest, List<? extends T> src) {
+        for (int i=0; i<src.size(); i++) {
+            T t = src.get(i); // src是producer
+            dest.add(t); // dest是consumer
+        }
+    }
+}
+```
+
+## 泛型和反射
+
+部分反射API是泛型，例如：`Class<T>`，`Constructor<T>`；
+
+可以声明带泛型的数组，但不能直接创建带泛型的数组，必须强制转型；
+
+可以通过Array.newInstance(Class<T>, int)创建T[]数组，需要强制转型；
+
+同时使用泛型和可变参数时需要特别小心。
