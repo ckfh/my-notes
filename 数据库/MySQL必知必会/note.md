@@ -412,3 +412,37 @@ WHERE cust_id = 10005;
 **逐渐增加子查询来建立查询**：首先，建立和测试最内层的查询。然后，用硬编码数据建立和测试外层查询，并且仅在确认它正常后才嵌入子查询。这时，再次测试它。对于要增加的每个查询，重复这些步骤。这样做仅给构造查询增加了一点点时间，但节省了以后（找出查询为什么不正常）的大量时间，并且极大地提高了查询一开始就正常工作的可能性。
 
 ## 第15章：联结表
+
+联结是一种机制，用来在一条SELECT语句中关联表，因此称之为联结。使用特殊的语法，可以联结多个表返回一组输出，联结在运行时关联表中正确的行。
+
+```SQL
+# 对vendors表和products表进行笛卡尔积，并过滤出其中id相同的行，选择供应商名称、产品名称、产品价格进行显示：
+# 因此，该检索的内容是每个供应商各自的产品及其价格：
+SELECT vend_name, prod_name, prod_price
+FROM vendors,
+     products
+WHERE vendors.vend_id = products.vend_id
+ORDER BY vend_name, prod_name;
+# 使用内部联结（等值联结）实现相同的效果：
+SELECT vend_name, prod_name, prod_price
+FROM vendors
+         INNER JOIN products
+                    ON vendors.vend_id = products.vend_id
+ORDER BY vend_name, prod_name;
+# 显示编号为20005的订单中的物品：
+SELECT prod_name, vend_name, prod_price, quantity
+FROM orderitems,
+     products,
+     vendors
+WHERE products.vend_id = vendors.vend_id
+  AND orderitems.prod_id = products.prod_id
+  AND order_num = 20005;
+# 将第14章中第二个检索语句使用联结表实现：
+SELECT cust_name, cust_contact
+FROM customers,
+     orders,
+     orderitems
+WHERE customers.cust_id = orders.cust_id
+  AND orderitems.order_num = orders.order_num
+  AND prod_id = 'TNT2';
+```
