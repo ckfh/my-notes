@@ -413,6 +413,10 @@ WHERE cust_id = 10005;
 
 ## 第15章：联结表
 
+> INNER JOIN/ON
+
+[数据库表连接的简单解释](http://www.ruanyifeng.com/blog/2019/01/table-join.html)
+
 联结是一种机制，用来在一条SELECT语句中关联表，因此称之为联结。使用特殊的语法，可以联结多个表返回一组输出，联结在运行时关联表中正确的行。
 
 ```SQL
@@ -423,7 +427,7 @@ FROM vendors,
      products
 WHERE vendors.vend_id = products.vend_id
 ORDER BY vend_name, prod_name;
-# 使用内部联结（等值联结）实现相同的效果：
+# 使用内部联结（等值联结）实现相同的效果（只返回两张表匹配的记录）：
 SELECT vend_name, prod_name, prod_price
 FROM vendors
          INNER JOIN products
@@ -446,3 +450,70 @@ WHERE customers.cust_id = orders.cust_id
   AND orderitems.order_num = orders.order_num
   AND prod_id = 'TNT2';
 ```
+
+## 第16章：创建高级联结
+
+```SQL
+# 检索拥有产品ID为DTNTR的厂商所拥有的其它产品信息：
+SELECT prod_id, prod_name
+FROM products
+WHERE vend_id = (SELECT vend_id
+                 FROM products
+                 WHERE prod_id = 'DTNTR');
+# 使用自联结实现上述检索功能：
+SELECT p1.prod_id, p1.prod_name
+FROM products AS p1,
+     products AS p2
+WHERE p1.vend_id = p2.vend_id
+  AND p2.prod_id = 'DTNTR';
+```
+
+自联结通常作为外部语句用来替代从相同表中检索数据时使用的子查询语句。虽然最终的结果是相同的，但有时候处理联结远比处理子查询快得多。应该试一下两种方法，以确定哪一种的性能更好。
+
+```SQL
+# 检索购买了产品ID为FB的顾客全部信息以及相关订单编号、日期、产品数量、产品价格：
+SELECT c.*, o.order_num, o.order_date, oi.prod_id, oi.quantity, oi.item_price
+FROM customers AS c,
+     orders AS o,
+     orderitems AS oi
+WHERE c.cust_id = o.cust_id
+  AND oi.order_num = o.order_num
+  AND prod_id = 'FB';
+```
+
+在这个例子中，通配符只对第一个表使用。所有其它列明确列出，所以没有重复的列被检索出来。
+
+```SQL
+# 使用左外部联结检索所有客户的订单，包括那些没有订单的客户：
+SELECT c.cust_id, o.order_num
+FROM customers AS c
+         LEFT OUTER JOIN orders AS o ON c.cust_id = o.cust_id;
+# 使用右外部联结检索所有订单的客户，包括那些没有客户的订单：
+SELECT c.cust_id, o.order_num
+FROM customers AS c
+         RIGHT OUTER JOIN orders AS o ON c.cust_id = o.cust_id;
+```
+
+与内部联结关联两个表中的行不同的是，外部联结还包括没有关联行的行。
+
+```SQL
+# 使用带聚集函数的联结检索所有客户及每个客户所下的订单数：
+SELECT c.cust_id, c.cust_name, COUNT(o.order_num) AS num_ord
+FROM customers AS c
+         INNER JOIN orders AS o
+                    ON c.cust_id = o.cust_id
+GROUP BY c.cust_id;
+# 包括没有下过订单的客户：
+SELECT c.cust_id, c.cust_name, COUNT(o.order_num) AS num_ord
+FROM customers AS c
+         LEFT OUTER JOIN orders AS o
+                         ON c.cust_id = o.cust_id
+GROUP BY c.cust_id;
+```
+
+关于联结及其使用的某些要点：
+
+  1. 注意所使用的联结类型。一般我们使用内部联结，但使用外部联结也是有效的。
+  2. 保证使用正确的联结条件，否则将返回不正确的数据。
+  3. **应该总是提供联结条件，否则会得出笛卡儿积**。
+  4. 在一个联结中可以包含多个表，甚至对于每个联结可以采用不同的联结类型。虽然这样做是合法的，一般也很有用，但应该在一起测试它们前，分别测试每个联结。这将使故障排除更为简单。

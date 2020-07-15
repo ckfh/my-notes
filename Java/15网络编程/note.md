@@ -151,6 +151,164 @@ OutputStream out = sock.getOutputStream();
 
 ### 服务器端
 
+```Java
+public class Server {
+    public static void main(String[] args) throws IOException {
+        // 使用UDP也需要监听指定的端口：
+        DatagramSocket ds = new DatagramSocket(6666);
+        System.out.println("server is running...");
+        for (; ; ) {
+            // 准备一个缓冲区：
+            byte[] buffer = new byte[1024];
+            // 通过DatagramPacket实现接收：
+            DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
+            // 收取一个UDP数据包：
+            ds.receive(packet);
+            // 收取的数据被存储在buffer中，按照起始位置、长度、编码将byte数组转换为String：
+            // String​(byte[] bytes, int offset, int length, Charset charset)
+            String cmd = new String(packet.getData(), packet.getOffset(), packet.getLength(), StandardCharsets.UTF_8);
+            String resp = "bad command";
+            switch (cmd) {
+                case "date":
+                    resp = LocalDate.now().toString();
+                    break;
+                case "time":
+                    resp = LocalTime.now().withNano(0).toString();
+                    break;
+                case "datetime":
+                    resp = LocalDateTime.now().withNano(0).toString();
+                    break;
+                case "weather":
+                    resp = "sunny";
+                    break;
+                default:
+                    break;
+            }
+            System.out.println(cmd + " >>> " + resp);
+            packet.setData(resp.getBytes(StandardCharsets.UTF_8));
+            // 发送一个UDP数据包：
+            ds.send(packet);
+        }
+    }
+}
+```
+
+当服务器收到一个DatagramPacket后，通常必须立刻回复一个或多个UDP包，因为客户端地址在DatagramPacket中，每次收到的DatagramPacket可能是不同的客户端，如果不回复，客户端就收不到任何UDP包。
+
 ### 客户端
+
+```Java
+public class Client {
+    public static void main(String[] args) throws IOException, InterruptedException {
+        // 客户端创建DatagramSocket实例时并不需要指定端口，而是由操作系统自动指定一个当前未使用的端口：
+        DatagramSocket ds = new DatagramSocket();
+        // 调用setSoTimeout(1000)设定超时1秒，意思是后续接收UDP包时，等待时间最多不会超过1秒，否则在没有收到UDP包时，客户端会无限等待下去：
+        // 这一点和服务器端不一样，服务器端可以无限等待，因为它本来就被设计成长时间运行：
+        ds.setSoTimeout(1000);
+        // 这个connect()方法不是真连接，它是为了在客户端的DatagramSocket实例中保存服务器端的IP和端口号，确保这个DatagramSocket实例只能往指定的地址和端口发送UDP包，不能往其它地址和端口发送：
+        // 这么做不是UDP的限制，而是Java内置了安全检查：
+        ds.connect(InetAddress.getByName("localhost"), 6666);
+        DatagramPacket packet = null;
+        for (int i = 0; i < 5; i++) {
+            // 发送：
+            String cmd = new String[]{"date", "time", "datetime", "weather", "hello"}[i];
+            byte[] data = cmd.getBytes();
+            packet = new DatagramPacket(data, data.length);
+            ds.send(packet);
+            // 接收：
+            byte[] buffer = new byte[1024];
+            packet = new DatagramPacket(buffer, buffer.length);
+            ds.receive(packet);
+            String resp = new String(packet.getData(), packet.getOffset(), packet.getLength());
+            System.out.println(cmd + " >>> " + resp);
+            Thread.sleep(1500);
+        }
+        // 注意到disconnect()也不是真正地断开连接，它只是清除了客户端DatagramSocket实例记录的远程服务器地址和端口号，这样，DatagramSocket实例就可以连接另一个服务器端：
+        ds.disconnect();
+        System.out.println("disconnected.");
+    }
+}
+```
+
+如果客户端希望向两个不同的服务器发送UDP包，那么它必须创建两个DatagramSocket实例。
+
+后续的收发数据和服务器端是一致的。通常来说，客户端必须先发UDP包，因为客户端不发UDP包，服务器端就根本不知道客户端的地址和端口号。
+
+### 小结
+
+使用UDP协议通信时，服务器和客户端双方无需建立连接：
+
+- 服务器端用DatagramSocket(port)监听端口；
+- 客户端使用DatagramSocket.connect()指定远程地址和端口；
+- 双方通过receive()和send()读写数据；
+- **DatagramSocket没有IO流接口，数据被直接写入byte[]缓冲区**。
+
+## HTTP编程
+
+HTTP是HyperText Transfer Protocol的缩写，翻译为超文本传输协议，它是基于TCP协议之上的一种请求-响应协议。
+
+当浏览器希望访问某个网站时，浏览器和网站服务器之间首先建立TCP连接，且服务器总是使用80端口和加密端口443，然后，浏览器向服务器发送一个HTTP请求，服务器收到后，返回一个HTTP响应，并且在响应中包含了HTML的网页内容，这样，浏览器解析HTML后就可以给用户显示网页了。
+
+**POST请求通常要设置Content-Type表示Body的类型，Content-Length表示Body的长度，这样服务器就可以根据请求的Header和Body做出正确的响应**。POST请求的参数不一定是URL编码，可以按任意格式编码，只需要在Content-Type中正确设置即可。
+
+对于最早期的HTTP/1.0协议，每次发送一个HTTP请求，客户端都需要先创建一个新的TCP连接，然后，收到服务器响应后，关闭这个TCP连接。由于建立TCP连接就比较耗时，因此，为了提高效率，HTTP/1.1协议允许在一个TCP连接中反复发送-响应，这样就能大大提高效率。
+
+因为HTTP协议是一个请求-响应协议，客户端在发送了一个HTTP请求后，必须等待服务器响应后，才能发送下一个请求，这样一来，如果某个响应太慢，它就会堵住后面的请求。所以，为了进一步提速，HTTP/2.0允许客户端在没有收到响应的时候，发送多个HTTP请求，服务器返回响应的时候，不一定按顺序返回，只要双方能识别出哪个响应对应哪个请求，就可以做到并行发送和接收。
+
+### HTTP编程
+
+因为浏览器也是一种HTTP客户端，所以，客户端的HTTP编程，它的行为本质上和浏览器是一样的，即发送一个HTTP请求，接收服务器响应后，获得响应内容。只不过浏览器进一步把响应内容解析后渲染并展示给了用户，而我们使用Java进行HTTP客户端编程仅限于获得响应内容。
+
+```Java
+public class Main {
+    // 创建一个全局HttpClient实例，因为HttpClient内部使用线程池优化多个HTTP连接，可以复用：
+    static HttpClient httpClient = HttpClient.newBuilder().build();
+
+    public static void main(String[] args) throws Exception {
+        httpGet("https://www.sina.com.cn/");
+        httpPost("https://accounts.douban.com/j/mobile/login/basic",
+                "name=bob%40example.com&password=12345678&remember=false&ck=&ticket=");
+        httpGetImage("https://img.t.sinajs.cn/t6/style/images/global_nav/WB_logo.png");
+    }
+    // 使用GET请求获取文本内容：
+    static void httpGet(String url) throws Exception {
+        HttpRequest request = HttpRequest.newBuilder(new URI(url))
+                .header("User-Agent", "Java HttpClient").header("Accept", "*/*")
+                .timeout(Duration.ofSeconds(5))
+                .version(HttpClient.Version.HTTP_2).build();
+        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        System.out.println(response.body().substring(0, 1024) + "...");
+    }
+
+    static void httpGetImage(String url) throws Exception {
+        HttpRequest request = HttpRequest.newBuilder(new URI(url))
+                .header("User-Agent", "Java HttpClient").header("Accept", "*/*")
+                .timeout(Duration.ofSeconds(5))
+                .version(HttpClient.Version.HTTP_2).build();
+        HttpResponse<InputStream> response = httpClient.send(request, HttpResponse.BodyHandlers.ofInputStream());
+        BufferedImage img = ImageIO.read(response.body());
+        ImageIcon icon = new ImageIcon(img);
+        JFrame frame = new JFrame();
+        frame.setLayout(new FlowLayout());
+        frame.setSize(200, 100);
+        JLabel lbl = new JLabel();
+        lbl.setIcon(icon);
+        frame.add(lbl);
+        frame.setVisible(true);
+        frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+    }
+
+    static void httpPost(String url, String body) throws Exception {
+        HttpRequest request = HttpRequest.newBuilder(new URI(url))
+                .header("User-Agent", "Mozilla/5.0 (compatible, MSIE 11, Windows NT 6.3; Trident/7.0) like Gecko")
+                .header("Accept", "*/*").header("Content-Type", "application/x-www-form-urlencoded")
+                .timeout(Duration.ofSeconds(5))
+                .version(HttpClient.Version.HTTP_2)
+                .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8)).build();
+        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        System.out.println(response.body());
+    }
+}
+```
 
 ### 小结
