@@ -517,3 +517,56 @@ GROUP BY c.cust_id;
   2. 保证使用正确的联结条件，否则将返回不正确的数据。
   3. **应该总是提供联结条件，否则会得出笛卡儿积**。
   4. 在一个联结中可以包含多个表，甚至对于每个联结可以采用不同的联结类型。虽然这样做是合法的，一般也很有用，但应该在一起测试它们前，分别测试每个联结。这将使故障排除更为简单。
+
+## 第17章：组合查询
+
+```SQL
+# 把输出组合成单个查询结果集（合并重复结果）：
+SELECT vend_id, prod_id, prod_price
+FROM products
+WHERE prod_price <= 5
+UNION
+SELECT vend_id, prod_id, prod_price
+FROM products
+WHERE vend_id IN (1001, 1002);
+# 仅用WHERE子句实现相同查询：
+SELECT vend_id, prod_id, prod_price
+FROM products
+WHERE prod_price <= 5
+   OR vend_id IN (1001, 1002);
+```
+
+对于更复杂的过滤条件，或者从多个表（而不是单个表）中检索数据的情形，使用UNION可能会使处理更简单。
+
+UNION中的每个查询必须包含相同的列、表达式或聚集函数（不过各个列不需要以相同的次序列出）。
+
+列数据类型必须兼容：类型不必完全相同，但必须是DBMS可以隐含地转换的类型（例如，不同的数值类型或不同的日期类型）。
+
+```SQL
+# 使用UNION ALL，MySQL不取消重复的行：
+SELECT vend_id, prod_id, prod_price
+FROM products
+WHERE prod_price <= 5
+UNION ALL
+SELECT vend_id, prod_id, prod_price
+FROM products
+WHERE vend_id IN (1001, 1002);
+```
+
+UNION几乎总是完成与多个WHERE条件相同的工作。UNION ALL为UNION的一种形式，它完成WHERE子句完成不了的工作。如果确实需要每个条件的匹配行全部出现（包括重复行），则必须使用UNION ALL而不是WHERE。
+
+```SQL
+# 对组合查询结果进行排序：
+SELECT vend_id, prod_id, prod_price
+FROM products
+WHERE prod_price <= 5
+UNION
+SELECT vend_id, prod_id, prod_price
+FROM products
+WHERE vend_id IN (1001, 1002)
+ORDER BY vend_id, prod_price;
+```
+
+虽然ORDER BY子句似乎只是最后一条SELECT语句的组成部分，但实际上MySQL将用它来排序所有SELECT语句返回的所有结果。
+
+## 第18章：全文本搜索

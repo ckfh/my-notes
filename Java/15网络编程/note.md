@@ -279,7 +279,7 @@ public class Main {
         HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
         System.out.println(response.body().substring(0, 1024) + "...");
     }
-
+    // 使用GET请求获取二进制内容：
     static void httpGetImage(String url) throws Exception {
         HttpRequest request = HttpRequest.newBuilder(new URI(url))
                 .header("User-Agent", "Java HttpClient").header("Accept", "*/*")
@@ -297,7 +297,7 @@ public class Main {
         frame.setVisible(true);
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
     }
-
+    // 使用POST请求，准备好发送的Body数据并正确设置Content-Type：
     static void httpPost(String url, String body) throws Exception {
         HttpRequest request = HttpRequest.newBuilder(new URI(url))
                 .header("User-Agent", "Mozilla/5.0 (compatible, MSIE 11, Windows NT 6.3; Trident/7.0) like Gecko")
@@ -312,3 +312,7 @@ public class Main {
 ```
 
 ### 小结
+
+Java提供了HttpClient作为新的HTTP客户端编程接口用于取代老的HttpURLConnection接口；
+
+HttpClient使用链式调用并通过内置的BodyPublishers和BodyHandlers来更方便地处理数据。
