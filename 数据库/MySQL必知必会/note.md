@@ -676,3 +676,50 @@ ALTER TABLE的一种常见用途是定义外键。
 **重要的是知道视图仅仅是用来查看存储在别处的数据的一种设施。视图本身不包含数据，因此它们返回的数据是从其他表中检索出来的。在添加或更改这些表中的数据时，视图将返回改变过的数据**。
 
 **因为视图不包含数据，所以每次使用视图时，都必须处理查询执行时所需的任一个检索。如果你用多个联结和过滤创建了复杂的视图或者嵌套了视图，可能会发现性能下降得很厉害。因此，在部署使用了大量视图的应用前，应该进行测试**。
+
+ORDER BY可以用在视图中，但如果从该视图检索数据SELECT中也含有ORDER BY，那么该视图中的ORDER BY将被覆盖；视图不能索引，也不能有关联的触发器或默认值；视图可以和表一起使用。例如，编写一条联结表和视图的SELECT语句。
+
+```SQL
+# 创建视图productcustomers，它联结了三个表，以返回已订购了任意产品的所有客户的列表：
+CREATE VIEW productcustomers AS
+SELECT cust_name, cust_contact, prod_id
+FROM customers,
+     orders,
+     orderitems
+WHERE customers.cust_id = orders.cust_id
+  AND orderitems.order_num = orders.order_num;
+# 列出订购了任意产品的客户：
+SELECT *
+FROM productcustomers;
+```
+
+可以看出，视图极大地简化了复杂SQL语句的使用。利用视图，可一次性编写基础的SQL，然后根据需要多次使用。
+
+**创建不受特定数据限制的视图是一种好办法。例如，上面创建的视图返回生产所有产品的客户而不仅仅是生产TNT2的客户。扩展视图的范围不仅使得它能被重用，而且甚至更有用。这样做不需要创建和维护多个类似视图**。
+
+```SQL
+CREATE VIEW vendorlocations AS
+SELECT CONCAT(RTRIM(vend_name), '(', RTRIM(vend_country), ')')
+           AS vend_title
+FROM vendors
+ORDER BY vend_name;
+# 将格式化的检索语句转化为视图，就不必每次执行复杂的格式化语句：
+SELECT *
+FROM vendorlocations;
+```
+
+```SQL
+CREATE VIEW customeremaillist AS
+SELECT cust_id, cust_name, cust_email
+FROM customers
+WHERE cust_email IS NOT NULL;
+# 使用视图过滤不想要的数据：
+SELECT *
+FROM customeremaillist;
+```
+
+**如果从视图检索数据时使用了一条WHERE子句，则两组子句（一组在视图中，另一组是传递给视图的）将自动组合**。
+
+**一般，应该将视图用于检索（SELECT语句）而不用于更新（INSERT、UPDATE和DELETE）**。
+
+## 第23章：使用存储过程
