@@ -372,13 +372,13 @@ ORDER BY ordertotal;
 子查询最常见的使用是在WHERE子句的IN操作符中，以及用来填充计算列。
 
 ```SQL
-# 检索订购物品TNT2的所有客户的ID：
+-- 检索订购物品TNT2的所有客户的ID：
 SELECT cust_id
 FROM orders
 WHERE order_num IN (SELECT order_num
                     FROM orderitems
                     WHERE prod_id = 'TNT2');
-# 检索上述客户ID的客户信息：
+-- 检索上述客户ID的客户信息：
 SELECT cust_name, cust_contact
 FROM customers
 WHERE cust_id IN (SELECT cust_id
@@ -386,11 +386,11 @@ WHERE cust_id IN (SELECT cust_id
                   WHERE order_num IN (SELECT order_num
                                       FROM orderitems
                                       WHERE prod_id = 'TNT2'));
-# 检索顾客ID为10001的订单数：
+-- 检索顾客ID为10001的订单数：
 SELECT COUNT(*) AS orders
 FROM orders
 WHERE cust_id = 10001;
-# 检索所有顾客的姓名、州、及其所持有的订单数目：
+-- 检索所有顾客的姓名、州、及其所持有的订单数目：
 SELECT cust_name,
        cust_state,
        (SELECT COUNT(*)
@@ -398,7 +398,7 @@ SELECT cust_name,
         WHERE orders.cust_id = customers.cust_id) AS orders
 FROM customers
 ORDER BY cust_name;
-# 上述圆括号中的子查询对检索出的每个客户执行一次，该子查询执行了5次，因为检索出了5个客户：
+-- 上述圆括号中的子查询对检索出的每个客户执行一次，该子查询执行了5次，因为检索出了5个客户：
 SELECT COUNT(*) AS orders
 FROM orders
 WHERE cust_id = 10001;
@@ -420,20 +420,20 @@ WHERE cust_id = 10005;
 联结是一种机制，用来在一条SELECT语句中关联表，因此称之为联结。使用特殊的语法，可以联结多个表返回一组输出，联结在运行时关联表中正确的行。
 
 ```SQL
-# 对vendors表和products表进行笛卡尔积，并过滤出其中id相同的行，选择供应商名称、产品名称、产品价格进行显示：
-# 因此，该检索的内容是每个供应商各自的产品及其价格：
+-- 对vendors表和products表进行笛卡尔积，并过滤出其中id相同的行，选择供应商名称、产品名称、产品价格进行显示：
+-- 因此，该检索的内容是每个供应商各自的产品及其价格：
 SELECT vend_name, prod_name, prod_price
 FROM vendors,
      products
 WHERE vendors.vend_id = products.vend_id
 ORDER BY vend_name, prod_name;
-# 使用内部联结（等值联结）实现相同的效果（只返回两张表匹配的记录）：
+-- 使用内部联结（等值联结）实现相同的效果（只返回两张表匹配的记录）：
 SELECT vend_name, prod_name, prod_price
 FROM vendors
          INNER JOIN products
                     ON vendors.vend_id = products.vend_id
 ORDER BY vend_name, prod_name;
-# 显示编号为20005的订单中的物品：
+-- 显示编号为20005的订单中的物品：
 SELECT prod_name, vend_name, prod_price, quantity
 FROM orderitems,
      products,
@@ -441,7 +441,7 @@ FROM orderitems,
 WHERE products.vend_id = vendors.vend_id
   AND orderitems.prod_id = products.prod_id
   AND order_num = 20005;
-# 将第14章中第二个检索语句使用联结表实现：
+-- 将第14章中第二个检索语句使用联结表实现：
 SELECT cust_name, cust_contact
 FROM customers,
      orders,
@@ -454,13 +454,13 @@ WHERE customers.cust_id = orders.cust_id
 ## 第16章：创建高级联结
 
 ```SQL
-# 检索拥有产品ID为DTNTR的厂商所拥有的其它产品信息：
+-- 检索拥有产品ID为DTNTR的厂商所拥有的其它产品信息：
 SELECT prod_id, prod_name
 FROM products
 WHERE vend_id = (SELECT vend_id
                  FROM products
                  WHERE prod_id = 'DTNTR');
-# 使用自联结实现上述检索功能：
+-- 使用自联结实现上述检索功能：
 SELECT p1.prod_id, p1.prod_name
 FROM products AS p1,
      products AS p2
@@ -471,7 +471,7 @@ WHERE p1.vend_id = p2.vend_id
 自联结通常作为外部语句用来替代从相同表中检索数据时使用的子查询语句。虽然最终的结果是相同的，但有时候处理联结远比处理子查询快得多。应该试一下两种方法，以确定哪一种的性能更好。
 
 ```SQL
-# 检索购买了产品ID为FB的顾客全部信息以及相关订单编号、日期、产品数量、产品价格：
+-- 检索购买了产品ID为FB的顾客全部信息以及相关订单编号、日期、产品数量、产品价格：
 SELECT c.*, o.order_num, o.order_date, oi.prod_id, oi.quantity, oi.item_price
 FROM customers AS c,
      orders AS o,
@@ -484,11 +484,11 @@ WHERE c.cust_id = o.cust_id
 在这个例子中，通配符只对第一个表使用。所有其它列明确列出，所以没有重复的列被检索出来。
 
 ```SQL
-# 使用左外部联结检索所有客户的订单，包括那些没有订单的客户：
+-- 使用左外部联结检索所有客户的订单，包括那些没有订单的客户：
 SELECT c.cust_id, o.order_num
 FROM customers AS c
          LEFT OUTER JOIN orders AS o ON c.cust_id = o.cust_id;
-# 使用右外部联结检索所有订单的客户，包括那些没有客户的订单：
+-- 使用右外部联结检索所有订单的客户，包括那些没有客户的订单：
 SELECT c.cust_id, o.order_num
 FROM customers AS c
          RIGHT OUTER JOIN orders AS o ON c.cust_id = o.cust_id;
@@ -497,13 +497,13 @@ FROM customers AS c
 与内部联结关联两个表中的行不同的是，外部联结还包括没有关联行的行。
 
 ```SQL
-# 使用带聚集函数的联结检索所有客户及每个客户所下的订单数：
+-- 使用带聚集函数的联结检索所有客户及每个客户所下的订单数：
 SELECT c.cust_id, c.cust_name, COUNT(o.order_num) AS num_ord
 FROM customers AS c
          INNER JOIN orders AS o
                     ON c.cust_id = o.cust_id
 GROUP BY c.cust_id;
-# 包括没有下过订单的客户：
+-- 包括没有下过订单的客户：
 SELECT c.cust_id, c.cust_name, COUNT(o.order_num) AS num_ord
 FROM customers AS c
          LEFT OUTER JOIN orders AS o
@@ -521,7 +521,7 @@ GROUP BY c.cust_id;
 ## 第17章：组合查询
 
 ```SQL
-# 把输出组合成单个查询结果集（合并重复结果）：
+-- 把输出组合成单个查询结果集（合并重复结果）：
 SELECT vend_id, prod_id, prod_price
 FROM products
 WHERE prod_price <= 5
@@ -529,7 +529,7 @@ UNION
 SELECT vend_id, prod_id, prod_price
 FROM products
 WHERE vend_id IN (1001, 1002);
-# 仅用WHERE子句实现相同查询：
+-- 仅用WHERE子句实现相同查询：
 SELECT vend_id, prod_id, prod_price
 FROM products
 WHERE prod_price <= 5
@@ -543,7 +543,7 @@ UNION中的每个查询必须包含相同的列、表达式或聚集函数（不
 列数据类型必须兼容：类型不必完全相同，但必须是DBMS可以隐含地转换的类型（例如，不同的数值类型或不同的日期类型）。
 
 ```SQL
-# 使用UNION ALL，MySQL不取消重复的行：
+-- 使用UNION ALL，MySQL不取消重复的行：
 SELECT vend_id, prod_id, prod_price
 FROM products
 WHERE prod_price <= 5
@@ -556,7 +556,7 @@ WHERE vend_id IN (1001, 1002);
 UNION几乎总是完成与多个WHERE条件相同的工作。UNION ALL为UNION的一种形式，它完成WHERE子句完成不了的工作。如果确实需要每个条件的匹配行全部出现（包括重复行），则必须使用UNION ALL而不是WHERE。
 
 ```SQL
-# 对组合查询结果进行排序：
+-- 对组合查询结果进行排序：
 SELECT vend_id, prod_id, prod_price
 FROM products
 WHERE prod_price <= 5
@@ -582,7 +582,7 @@ ORDER BY vend_id, prod_price;
 **如果数据检索是最重要的（通常是这样），则你可以通过在INSERT和INTO之间添加关键字LOW_PRIORITY，指示MySQL降低INSERT语句的优先级**。
 
 ```SQL
-# 插入多个行：
+-- 插入多个行：
 INSERT INTO customers(cust_name,
                       cust_address,
                       cust_city,
@@ -606,7 +606,7 @@ VALUES ('Pep E. LaPew',
 **此技术可以提高数据库处理的性能，因为MySQL用单条INSERT语句处理多个插入比使用多条INSERT语句快**。
 
 ```SQL
-# 使用INSERT SELECT从custnew中将所有数据导入customers：
+-- 使用INSERT SELECT从custnew中将所有数据导入customers：
 INSERT INTO customers(cust_id,
                       cust_contact,
                       cust_email,
@@ -643,7 +643,7 @@ UPDATE语句中可以使用子查询，使得能用SELECT语句检索出的数�
 ## 第21章：创建和操纵表
 
 ```SQL
-# 获取插入到表中的最后一行的序列号：
+-- 获取插入到表中的最后一行的序列号：
 SELECT last_insert_id();
 ```
 
@@ -680,7 +680,7 @@ ALTER TABLE的一种常见用途是定义外键。
 ORDER BY可以用在视图中，但如果从该视图检索数据SELECT中也含有ORDER BY，那么该视图中的ORDER BY将被覆盖；视图不能索引，也不能有关联的触发器或默认值；视图可以和表一起使用。例如，编写一条联结表和视图的SELECT语句。
 
 ```SQL
-# 创建视图productcustomers，它联结了三个表，以返回已订购了任意产品的所有客户的列表：
+-- 创建视图productcustomers，它联结了三个表，以返回已订购了任意产品的所有客户的列表：
 CREATE VIEW productcustomers AS
 SELECT cust_name, cust_contact, prod_id
 FROM customers,
@@ -688,7 +688,7 @@ FROM customers,
      orderitems
 WHERE customers.cust_id = orders.cust_id
   AND orderitems.order_num = orders.order_num;
-# 列出订购了任意产品的客户：
+-- 列出订购了任意产品的客户：
 SELECT *
 FROM productcustomers;
 ```
@@ -703,7 +703,7 @@ SELECT CONCAT(RTRIM(vend_name), '(', RTRIM(vend_country), ')')
            AS vend_title
 FROM vendors
 ORDER BY vend_name;
-# 将格式化的检索语句转化为视图，就不必每次执行复杂的格式化语句：
+-- 将格式化的检索语句转化为视图，就不必每次执行复杂的格式化语句：
 SELECT *
 FROM vendorlocations;
 ```
@@ -713,7 +713,7 @@ CREATE VIEW customeremaillist AS
 SELECT cust_id, cust_name, cust_email
 FROM customers
 WHERE cust_email IS NOT NULL;
-# 使用视图过滤不想要的数据：
+-- 使用视图过滤不想要的数据：
 SELECT *
 FROM customeremaillist;
 ```
@@ -723,3 +723,89 @@ FROM customeremaillist;
 **一般，应该将视图用于检索（SELECT语句）而不用于更新（INSERT、UPDATE和DELETE）**。
 
 ## 第23章：使用存储过程
+
+```SQL
+CREATE PROCEDURE productpricing()
+BEGIN
+    SELECT AVG(prod_price) AS priceaverage
+    FROM products;
+end;
+CALL productpricing();
+DROP PROCEDURE productpricing;
+```
+
+```SQL
+CREATE PROCEDURE productpricing(OUT pl DECIMAL(8, 2),
+                                OUT ph DECIMAL(8, 2),
+                                OUT pa DECIMAL(8, 2))
+BEGIN
+    SELECT MIN(prod_price)
+    INTO pl
+    FROM products;
+    SELECT MAX(prod_price)
+    INTO ph
+    FROM products;
+    SELECT AVG(prod_price)
+    INTO pa
+    FROM products;
+end;
+-- 在调用时，这条语句并不显示任何数据。它返回以后可以显示（或在其它处理中使用）的变量：
+CALL productpricing(@pricelow, @pricehigh, @priceaverage);
+SELECT @pricehigh, @pricelow, @priceaverage;
+```
+
+每个参数必须具有指定的类型，这里使用十进制值。关键字OUT指出相应的参数用来从存储过程传出一个值（返回给调用者）。MySQL支持IN（传递给存储过程）、OUT（从存储过程传出，如这里所用）和INOUT（对存储过程传入和传出）类型的参数。
+
+存储过程的参数允许的数据类型与表中使用的数据类型相同。注意，记录集不是允许的类型，因此，不能通过一个参数返回多个行和列。
+
+**所有MySQL变量都必须以@开始**。
+
+```SQL
+CREATE PROCEDURE ordertotal(IN onumber INT,
+                            OUT ototal DECIMAL(8, 2))
+BEGIN
+    SELECT SUM(item_price * quantity)
+    FROM orderitems
+    WHERE order_num = onumber
+    INTO ototal;
+end;
+CALL ordertotal(20005, @total);
+SELECT @total;
+```
+
+只有在存储过程内包含业务规则和智能处理时，它们的威力才真正显现出来。
+
+```SQL
+CREATE PROCEDURE ordertotal(IN onumber INT,
+                            IN taxable BOOLEAN,
+                            OUT ototal DECIMAL(8, 2))
+    COMMENT 'Obtain order total, optionally adding tax'
+BEGIN
+    -- Declare variable for total
+    DECLARE total DECIMAL(8, 2);
+    -- Declare tax percentage
+    DECLARE taxrate INT DEFAULT 6;
+    -- Get the order total
+    SELECT SUM(item_price * quantity)
+    FROM orderitems
+    WHERE order_num = onumber
+    INTO total;
+    -- Is this taxable?
+    IF taxable THEN
+        -- Yes, so add taxrate to the total
+        SELECT total + (total / 100 * taxrate) INTO total;
+    end if;
+    -- And finally, save to out variable
+    SELECT total INTO ototal;
+end;
+CALL ordertotal(20005, 0, @total);
+SELECT @total;
+CALL ordertotal(20005, 1, @total);
+SELECT @total;
+```
+
+本例子中的存储过程在CREATE PROCEDURE语句中包含了一个COMMENT值。它不是必需的，但如果给出，将在SHOW PROCEDURE STATUS的结果中显示。SHOW PROCEDURE STATUS列出所有存储过程。为限制其输出，可使用LIKE指定一个过滤模式。
+
+为显示用来创建一个存储过程的CREATE语句，使用SHOW CREATE PROCEDURE语句。
+
+## 第24章：使用游标
