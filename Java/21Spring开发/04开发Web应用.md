@@ -63,3 +63,45 @@ Java Web的基础：Servlet容器，以及标准的Servlet组件：
   3. DispatcherServlet创建IoC容器并自动注册到ServletContext中。
 
 启动后，浏览器发出的HTTP请求全部由DispatcherServlet接收，并根据配置转发到指定Controller的指定方法处理。
+
+编写Controller只需要遵循以下要点：
+
+- Controller必须标记为@Controller；
+- 一个方法对应一个HTTP请求路径，用@GetMapping或@PostMapping表示GET或POST请求；
+- 需要接收的HTTP参数以@RequestParam()标注，可以设置默认值。如果方法参数需要传入HttpServletRequest、HttpServletResponse或者HttpSession，直接添加这个类型的参数即可，Spring MVC会自动按类型传入；
+- 返回的ModelAndView通常包含View的路径和一个Map作为Model，但也可以没有Model；
+- 返回重定向时既可以写new ModelAndView("redirect:/signin")，也可以直接返回"redirect:/signin"；
+- **如果在方法内部直接操作HttpServletResponse发送响应，返回null表示无需进一步处理**；
+
+    ```Java
+    public ModelAndView download(HttpServletResponse response) {
+        byte[] data = ...
+        response.setContentType("application/octet-stream");
+        OutputStream output = response.getOutputStream();
+        output.write(data);
+        output.flush();
+        return null;
+    }
+    ```
+
+- 对URL进行分组，每组对应一个Controller是一种很好的组织形式，并可以在Controller的class定义出添加URL前缀；
+
+    ```Java
+    @Controller
+    @RequestMapping("/user")
+    public class UserController {
+        // 注意实际URL映射是/user/profile
+        @GetMapping("/profile")
+        public ModelAndView profile() {
+            ...
+        }
+
+        // 注意实际URL映射是/user/changePassword
+        @GetMapping("/changePassword")
+        public ModelAndView changePassword() {
+            ...
+        }
+    }
+    ```
+
+- **实际方法的URL映射总是前缀+路径，这种形式还可以有效避免不小心导致的重复的URL映射**。

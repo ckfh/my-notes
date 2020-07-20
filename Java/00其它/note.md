@@ -1,5 +1,12 @@
 # 记录我自己踩过又老是忘记的坑
 
+## 格式化字符串
+
+```Java
+// 32位16进制整数（不足32位则左边补0）：
+String.format("%032x", new BigInteger(1, hash)
+```
+
 ## JVM、Java 编译器、Java 解释器
 
 [CSDN 文章](https://blog.csdn.net/wangaiheng/article/details/78343260)
