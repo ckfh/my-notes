@@ -809,3 +809,190 @@ SELECT @total;
 为显示用来创建一个存储过程的CREATE语句，使用SHOW CREATE PROCEDURE语句。
 
 ## 第24章：使用游标
+
+不像多数DBMS，MySQL游标只能用于存储过程（和函数）。
+
+## 第25章：使用触发器
+
+**保持每个数据库的触发器名唯一**。
+
+只有表才支持触发器，视图不支持（临时表也不支持）。
+
+```SQL
+-- 在插入语句成功执行后执行，且对每个插入行执行：
+CREATE TRIGGER newproduct
+    AFTER INSERT
+    ON products
+    FOR EACH ROW SELECT 'Product added';
+```
+
+触发器按每个表每个事件每次地定义，每个表每个事件每次只允许一个触发器。因此，每个表最多支持6个触发器（每条INSERT、UPDATE和DELETE的之前和之后）。单一触发器不能与多个事件或多个表关联，所以，如果你需要一个对INSERT和UPDATE操作执行的触发器，则应该定义两个触发器。
+
+**如果BEFORE触发器失败，则MySQL将不执行请求的操作。此外，如果BEFORE触发器或语句本身失败，MySQL将不执行AFTER触发器（如果有的话）**。
+
+INSERT触发器：
+
+- 在INSERT触发器代码内，可引用一个名为NEW的虚拟表，访问被插入的行；
+- **在BEFORE INSERT触发器中，NEW中的值也可以被更新（允许更改被插入的值）**；
+- **对于AUTO_INCREMENT列，NEW在INSERT执行之前包含0，在INSERT执行之后包含新的自动生成值**。
+
+```SQL
+-- 在对orders表插入语句后，显示新的自增值：
+CREATE TRIGGER neworder
+    AFTER INSERT
+    ON orders
+    FOR EACH ROW SELECT NEW.order_num
+```
+
+**通常，将BEFORE用于数据验证和净化（目的是保证插入表中的数据确实是需要的数据）。本提示也适用于UPDATE触发器**。
+
+DELETE触发器：
+
+- 在DELETE触发器代码内，你可以引用一个名为OLD的虚拟表，访问被删除的行；
+- OLD中的值全都是只读的，不能更新。
+
+```SQL
+-- 使用OLD保存将要被删除的行到一个存档表中：
+CREATE TRIGGER deleteorder
+    BEFORE DELETE
+    ON orders
+    FOR EACH ROW
+BEGIN
+    INSERT INTO archive_orders(order_num, order_date, cust_id)
+    VALUES (OLD.order_num, OLD.order_date, OLD.cust_id);
+end;
+```
+
+使用BEFORE DELETE触发器的优点（相对于AFTER DELETE触发器来说）为，如果由于某种原因，订单不能存档，DELETE本身将被放弃。
+
+UPDATE触发器：
+
+- 在UPDATE触发器代码中，你可以引用一个名为OLD的虚拟表访问以前（UPDATE语句前）的值，引用一个名为NEW的虚拟表访问新更新的值；
+- **在BEFORE UPDATE触发器中，NEW中的值可能也被更新（允许更改将要用于UPDATE语句中的值）**；
+- OLD中的值全都是只读的，不能更新。
+
+```SQL
+-- 保证插入到vendors表中的vend_state字段值总是大写：
+CREATE TRIGGER updateevendor
+    BEFORE UPDATE
+    ON vendors
+    FOR EACH ROW SET NEW.vend_state = UPPER(NEW.vend_state);
+```
+
+**应该用触发器来保证数据的一致性（大小写、格式等）。在触发器中执行这种类型的处理的优点是它总是进行这种处理，而且是透明地进行，与客户机应用无关**。
+
+**触发器的一种非常有意义的使用是创建审计跟踪。使用触发器，把更改（如果需要，甚至还有之前和之后的状态）记录到另一个表非常容易**。
+
+遗憾的是，MySQL触发器中不支持CALL语句。这表示不能从触发器内调用存储过程。所需的存储过程代码需要复制到触发器内。
+
+## 第26章：管理事务处理
+
+```SQL
+-- 回退：
+SELECT *
+FROM ordertotals;
+START TRANSACTION;
+DELETE
+FROM ordertotals;
+SELECT *
+FROM ordertotals;
+ROLLBACK;
+SELECT *
+FROM ordertotals;
+```
+
+事务处理用来管理INSERT、UPDATE和DELETE语句。你不能回退SELECT语句。（这样做也没有什么意义。）**你不能回退CREATE或DROP操作。事务处理块中可以使用这两条语句，但如果你执行回退，它们不会被撤销**。
+
+**一般的MySQL语句都是直接针对数据库表执行和编写的。这就是所谓的隐含提交（implicit commit），即提交（写或保存）操作是自动进行的。在事务处理块中，提交不会隐含地进行**。
+
+```SQL
+-- 提交：
+START TRANSACTION;
+DELETE
+FROM orderitems
+WHERE order_num = 20010;
+DELETE
+FROM orders
+WHERE order_num = 20010;
+COMMIT;
+```
+
+当COMMIT或ROLLBACK语句执行后，事务会自动关闭（将来的更改会隐含提交）。
+
+```SQL
+-- 部分回退：
+SAVEPOINT delete1;
+ROLLBACK TO delete1;
+```
+
+**可以在MySQL代码中设置任意多的保留点，越多越好。因为保留点越多，你就越能按自己的意愿灵活地进行回退**。
+
+保留点在事务处理完成（执行一条ROLLBACK或COMMIT）后自动释放。自MySQL 5以来，也可以用RELEASESAVEPOINT明确地释放保留点。
+
+```SQL
+-- 更改默认的提交行为：
+SET autocommit = 0;
+```
+
+**autocommit标志是针对每个连接而不是服务器的**。
+
+## 第27章：全球化和本地化
+
+字符集为字母和符号的集合；编码为某个字符集成员的内部表示；校对为规定字符如何比较的指令。
+
+```SQL
+-- 显示所有可用的字符集以及每个字符集的描述和默认校对：
+SHOW CHARACTER SET;
+-- 显示所有可用的校对，以及它们使用的字符集：
+SHOW COLLATION;
+-- 创建数据库时所用的字符集：
+SHOW VARIABLES LIKE 'character%';
+-- 创建数据库时所用的校对：
+SHOW VARIABLES LIKE 'collation%';
+```
+
+实际上，字符集很少是服务器范围（甚至数据库范围）的设置。不同的表，甚至不同的列都可能需要不同的字符集，而且两者都可以在创建表时指定。
+
+校对在对用ORDER BY子句检索出来的数据排序时起重要的作用。
+
+```SQL
+-- 使用COLLATE关键字指定一个备用的校对顺序：
+SELECT *
+FROM customers
+ORDER BY lastname, firstname COLLATE latin1_general_cs;
+```
+
+**值得注意的是，如果绝对需要，串可以在字符集之间进行转换。为此，使用Cast()或Convert()函数**。
+
+## 第28章：安全管理
+
+```SQL
+-- 获得所有用户账号列表：
+USE mysql;
+SELECT user FROM user;
+-- 创建一个新用户账号，创建账号时不一定需要口令：
+CREATE USER ben IDENTIFIED BY 'p@$$w0rd';
+-- 显示赋予用户账号的权限：
+SHOW GRANTS FOR ben;
+-- 允许用户在crashcourse数据库的所有表上使用SELECT：
+GRANT SELECT ON crashcourse.* TO ben;
+-- 更改用户口令，必须使用PASSWORD()函数进行加密：
+SET PASSWORD FOR ben = PASSWORD ('n3w p@$$w0rd');
+```
+
+IDENTIFIED BY指定的口令为纯文本，MySQL将在保存到user表之前对其进行加密。为了作为散列值指定口令，使用IDENTIFIED BY PASSWORD。
+
+在使用GRANT和REVOKE时，用户账号必须存在，但对所涉及的对象没有这个要求。这允许管理员在创建数据库和表之前设计和实现安全措施。这样做的副作用是，当某个数据库或表被删除时（用DROP语句），相关的访问权限仍然存在。而且，如果将来重新创建该数据库或表，这些权限仍然起作用。
+
+## 第29章：数据库维护
+
+为了保证所有数据被写到磁盘（包括索引数据），可能需要在进行备份前使用FLUSH TABLES语句。
+
+```SQL
+-- 检查表键是否正确：
+ANALYZE TABLE orders;
+-- 针对许多问题对表进行检查：
+CHECK TABLE orders, orderitems;
+```
+
+如果从一个表中删除大量数据，应该使用OPTIMIZE TABLE来收回所用的空间，从而优化表的性能。
