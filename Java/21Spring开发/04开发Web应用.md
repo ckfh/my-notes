@@ -52,9 +52,9 @@ Java Web的基础：Servlet容器，以及标准的Servlet组件：
 
 初始化参数contextClass指定使用注解配置的AnnotationConfigWebApplicationContext，配置文件的位置参数contextConfigLocation指向AppConfig的完整类名，最后，把这个Servlet映射到/*，即处理所有URL。
 
-上述配置可以看作一个样板配置，有了这个配置，Servlet容器会首先初始化Spring MVC的DispatcherServlet，在DispatcherServlet启动时，它根据配置AppConfig创建了一个类型是WebApplicationContext的IoC容器，完成所有Bean的初始化，并将容器绑到ServletContext上。
+**上述配置可以看作一个样板配置，有了这个配置，Servlet容器会首先初始化Spring MVC的DispatcherServlet，在DispatcherServlet启动时，它根据配置AppConfig创建了一个类型是WebApplicationContext的IoC容器，完成所有Bean的初始化，并将容器绑到ServletContext上**。
 
-因为DispatcherServlet持有IoC容器，能从IoC容器中获取所有@Controller的Bean，因此，DispatcherServlet接收到所有HTTP请求后，根据Controller方法配置的路径，就可以正确地把请求转发到指定方法，并根据返回的ModelAndView决定如何渲染页面。
+**因为DispatcherServlet持有IoC容器，能从IoC容器中获取所有@Controller的Bean，因此，DispatcherServlet接收到所有HTTP请求后，根据Controller方法配置的路径，就可以正确地把请求转发到指定方法，并根据返回的ModelAndView决定如何渲染页面**。
 
 使用Spring MVC时，整个Web应用程序按如下顺序启动：
 
@@ -62,7 +62,7 @@ Java Web的基础：Servlet容器，以及标准的Servlet组件：
   2. Tomcat读取web.xml并初始化DispatcherServlet；
   3. DispatcherServlet创建IoC容器并自动注册到ServletContext中。
 
-启动后，浏览器发出的HTTP请求全部由DispatcherServlet接收，并根据配置转发到指定Controller的指定方法处理。
+**启动后，浏览器发出的HTTP请求全部由DispatcherServlet接收，并根据配置转发到指定Controller的指定方法处理**。
 
 编写Controller只需要遵循以下要点：
 
@@ -105,3 +105,184 @@ Java Web的基础：Servlet容器，以及标准的Servlet组件：
     ```
 
 - **实际方法的URL映射总是前缀+路径，这种形式还可以有效避免不小心导致的重复的URL映射**。
+
+## 使用REST
+
+<img src="./image/restful风格.png">
+
+<img src="./image/rest-通俗版.png">
+
+在Web应用中，除了需要使用MVC给用户显示页面外，还有一类API接口，我们称之为REST，通常输入输出都是JSON，便于第三方调用或者使用页面JavaScript与之交互。
+
+直接在Controller中处理JSON是可以的，因为Spring MVC的@GetMapping和@PostMapping都支持指定输入和输出的格式。如果我们想接收JSON，输出JSON，那么可以这样写：
+
+```Java
+@Controller
+public class RestController {
+    final Logger logger = LoggerFactory.getLogger(getClass());
+
+    @PostMapping(value = "/rest",
+            consumes = "application/json;charset=UTF-8",
+            produces = "application/json;charset=UTF-8")
+    @ResponseBody
+    public String rest(@RequestBody User user) {
+        logger.info("JSON to User: {}", user.getEmail());
+        return "{\"restSupport\": true}";
+    }
+}
+```
+
+对应的Maven工程需要加入Jackson这个依赖。
+
+**注意到@PostMapping使用consumes声明能接收的类型，使用produces声明输出的类型，并且额外加了@ResponseBody表示返回的String无需额外处理，直接作为输出内容写入HttpServletResponse。输入的JSON则根据注解@RequestBody直接被Spring反序列化为User这个JavaBean**。
+
+<img src="./image/rest-request.png">
+
+<img src="./image/rest-log.png">
+
+<img src="./image/rest-response.png">
+
+直接用Spring的Controller配合一大堆注解写REST太麻烦了，因此，Spring还额外提供了一个@RestController注解，使用@RestController替代@Controller后，每个方法自动变成API接口方法。我们还是以实际代码举例，编写ApiController如下：
+
+```Java
+@RestController
+@RequestMapping("/api")
+public class ApiController {
+    @Autowired
+    UserService userService;
+    // GET /users 查询全部用户
+    @GetMapping("/users")
+    public List<User> users() {
+        return this.userService.getUsers();
+    }
+    // GET /users/id 获取单个用户
+    @GetMapping("/users/{id}")
+    public User user(@PathVariable("id") long id) {
+        return this.userService.getUserById(id);
+    }
+    // POST /signin
+    // 注意此处反序列化为SignInRequest这个JavaBean
+    @PostMapping("/signin")
+    public Map<String, Object> signin(@RequestBody SignInRequest signinRequest) {
+        try {
+            User user = this.userService.signin(signinRequest.email, signinRequest.password);
+            return Map.of("user", user);
+        } catch (Exception e) {
+            return Map.of("error", "SIGNIN_FAILED", "message", e.getMessage());
+        }
+    }
+
+    public static class SignInRequest {
+        public String email;
+        public String password;
+    }
+}
+```
+
+使用@RestController可以方便地编写REST服务，Spring默认使用JSON作为输入和输出。
+
+编写REST接口只需要定义@RestController，然后，每个方法都是一个API接口，输入和输出只要能被Jackson序列化或反序列化为JSON就没有问题。我们用浏览器测试GET请求，可直接显示JSON响应：
+
+<img src="./image/rest-get.png">
+
+测试POST请求：
+
+<img src="./image/rest-post.png">
+
+<img src="./image/rest-post-response.png">
+
+注意观察上述JSON的输出，User能被正确地序列化为JSON，但暴露了password属性，这是我们不期望的。要避免输出password属性，可以把User复制到另一个UserBean对象，该对象只持有必要的属性，但这样做比较繁琐。另一种简单的方法是直接在User的password属性定义处加上@JsonIgnore表示完全忽略该属性：
+
+```Java
+public class User {
+    ...
+
+    @JsonIgnore
+    public String getPassword() {
+        return password;
+    }
+
+    ...
+}
+```
+
+但是这样一来，如果写一个register(User user)方法，那么该方法的User对象也拿不到注册时用户传入的密码了。如果要允许输入password，但不允许输出password，即在JSON序列化和反序列化时，允许写属性，禁用读属性，可以更精细地控制如下：
+
+```Java
+public class User {
+    ...
+
+    @JsonProperty(access = Access.WRITE_ONLY)
+    public String getPassword() {
+        return password;
+    }
+
+    ...
+}
+```
+
+## 集成Filter
+
+简单地使用一个EncodingFilter，在全局范围类给HttpServletRequest和HttpServletResponse强制设置为UTF-8编码。
+
+可以自己编写一个EncodingFilter，也可以直接使用Spring MVC自带的一个CharacterEncodingFilter。配置Filter时，只需在web.xml中声明即可：
+
+```XML
+<web-app>
+    <display-name>Archetype Created Web Application</display-name>
+
+    <filter>
+        <filter-name>encodingFilter</filter-name>
+        <filter-class>org.springframework.web.filter.CharacterEncodingFilter</filter-class>
+        <init-param>
+            <param-name>encoding</param-name>
+            <param-value>UTF-8</param-value>
+        </init-param>
+        <init-param>
+            <param-name>forceEncoding</param-name>
+            <param-value>true</param-value>
+        </init-param>
+    </filter>
+
+    <filter-mapping>
+        <filter-name>encodingFilter</filter-name>
+        <url-pattern>/*</url-pattern>
+    </filter-mapping>
+
+    ...
+</web-app>
+```
+
+因为这种Filter和我们业务关系不大，**注意到CharacterEncodingFilter其实和Spring的IoC容器没有任何关系，两者均互不知晓对方的存在（为何无关，请参考第一节）**，因此，配置这种Filter十分简单。
+
+再考虑这样一个问题：如果允许用户使用Basic模式进行用户验证，即在HTTP请求中添加头Authorization: Basic email:password，这个需求如何实现？
+
+编写一个AuthFilter是最简单的实现方式：
+
+```Java
+@Component
+public class AuthFilter implements Filter {
+    @Autowired
+    UserService userService;
+
+    public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain)
+            throws IOException, ServletException {
+        HttpServletRequest req = (HttpServletRequest) request;
+        // 获取Authorization头:
+        String authHeader = req.getHeader("Authorization");
+        if (authHeader != null && authHeader.startsWith("Basic ")) {
+            // 从Header中提取email和password:
+            String email = prefixFrom(authHeader);
+            String password = suffixFrom(authHeader);
+            // 登录:
+            User user = userService.signin(email, password);
+            // 放入Session:
+            req.getSession().setAttribute(UserController.KEY_USER, user);
+        }
+        // 继续处理请求:
+        chain.doFilter(request, response);
+    }
+}
+```
+
+在Spring中创建的这个AuthFilter是一个普通Bean，Servlet容器并不知道，所以它不会起作用。
