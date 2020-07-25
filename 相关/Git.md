@@ -55,7 +55,7 @@ git reset --hard <commit id>
 Git的版本回退速度非常快，因为Git在内部有个指向当前版本的HEAD指针，当你回退版本的时候，Git仅仅是把HEAD从指向当前版本改为指向目标版本，然后顺便把工作区的文件更新了。
 
 ```bash
-# 记录你的每一次命令：
+# 记录你的每一次版本变更：
 git reflog
 ```
 
@@ -84,18 +84,18 @@ Git跟踪并管理的是*修改*，而非文件。**即提交的是暂存区的�
 ### 撤销修改
 
 ```bash
-# 丢弃工作区的修改：
+# 丢弃工作区的修改，回到最近一次add或commit的状态：
 git checkout -- <file>
 ```
 
 如果add过，就回到最近一次add的状态，如果没有add过，就回到最近一次commit的状态。
 
 ```bash
-# 把暂存区的修改撤销掉：
+# 从暂存区中撤销被添加的文件修改：
 git reset HEAD <file>
 ```
 
-如果暂存区的工作都不想要，就先执行上条指令，再执行上上条指令。
+因此，当你添加了某个文件修改，此时想丢弃工作区的这个文件修改，必须先从暂存区中撤销，再进行丢弃。
 
 场景：
 
@@ -152,3 +152,141 @@ git push origin master
 由于远程库是空的，我们第一次推送master分支时，加上了-u参数，Git不但会把本地的master分支内容推送给远程新的master分支，还会把本地的master分支和远程的master分支关联起来，在以后的推送或者拉取时就可以简化命令。
 
 ### 从远程库克隆
+
+假设我们从零开发，那么最好的方式是先创建远程库，然后，从远程库克隆。
+
+```bash
+# 克隆一个本地库：
+git clone git@github.com:michaelliao/gitskills.git
+```
+
+## 分支管理
+
+### 创建与合并分支
+
+```bash
+# 创建分支并切换到分支：
+git switch -c dev
+# 分两条语句：
+git branch dev
+git switch dev
+# 查看所有分支：
+git branch
+# 合并指定分支到当前分支：
+git merge dev
+# 删除指定分支
+git branch -d dev
+```
+
+假设将dev分支提交的修改合并到master分支并且master分支没有任何提交：
+
+<img src="./image/合并-无冲突01.png"/>
+
+<img src="./image/合并-无冲突02.png"/>
+
+Git鼓励你使用分支完成某个任务，合并后再删掉分支，这和直接在master分支上工作效果是一样的，但过程更安全。
+
+### 解决冲突
+
+场景：新建了一个feature1分支，在该分支上修改了readme.txt文件的最后一行，**添加并提交**；回到master分支，在该分支上修改了readme.txt文件的最后一行，**添加并提交**。尝试合并feature1分支到master分支。
+
+发生冲突：原因在于两个分支都修改了同一行，Git无法做出选择。
+
+此时我们需要进入到readme.txt文件，将冲突内容修改为我们希望的内容，**添加并提交**。
+
+```bash
+# 可以查看分支的合并情况：
+git log --graph --pretty=oneline --abbrev-commit
+```
+
+当Git无法自动合并分支时，就必须首先解决冲突。解决冲突后，再提交，合并完成。解决冲突就是把Git合并失败的文件手动编辑为我们希望的内容，再提交。
+
+<img src="./image/合并-有冲突01.png">
+
+<img src="./image/合并-有冲突02.png">
+
+### 分支管理策略
+
+通常，合并分支时，如果可能，Git会用Fast forward模式，但这种模式下，删除分支后，会丢掉分支信息。如果要强制禁用Fast forward模式，Git就会在merge时生成一个新的commit，这样，从分支历史上就可以看出分支信息。
+
+```bash
+git merge --no-ff -m "merge with no-ff" dev
+```
+
+因为本次合并要创建一个新的commit，所以加上-m参数，把commit描述写进去。
+
+按照几个基本原则进行分支管理：
+
+  1. 首先，master分支应该是非常稳定的，也就是仅用来发布新版本，平时不能在上面干活；
+  2. 干活都在dev分支上，也就是说，dev分支是不稳定的，到某个时候，比如1.0版本发布时，再把dev分支合并到master上，在master分支发布1.0版本；
+
+合并分支时，加上--no-ff参数就可以用普通模式合并，合并后的历史有分支，能看出来曾经做过合并，而fast forward合并就看不出来曾经做过合并。
+
+**合并完分支后，建议删除该分支**。
+
+### Bug分支
+
+```bash
+# 把当前工作现场“储藏”起来，等以后恢复现场后继续工作：
+git stash
+# 查看工作现场：
+git stash list
+# 恢复工作现场但不把工作现场从现场栈中删除：
+git stash apply
+# 将工作现场从现场栈中删除：
+git stash drop
+# 恢复的同时删除：
+git stash pop
+# 复制一个特定提交所作的修改到当前分支并提交：
+git cherry-pick <commit id>
+```
+
+- 修复bug时，我们会通过创建新的bug分支进行修复，然后合并，最后删除；
+- 当手头工作没有完成时，先把工作现场git stash一下，然后去修复bug，修复后，再git stash pop，回到工作现场；
+- 在master分支上修复的bug，想要合并到当前dev分支，可以用git cherry-pick命令，把bug提交的修改“复制”到当前分支，避免重复劳动。
+
+### Feature分支
+
+```bash
+# 强行删除一个没有被合并过的分支：
+git brach -D <name>
+```
+
+开发一个新feature，最好新建一个分支；
+
+### 多人协作
+
+```bash
+# 查看远程库的信息：
+git remote
+# 详细信息：
+git remote -v
+# origin是远程库的名称，推送master分支到远程库中对应的master分支：
+git push origin master
+# 创建本地的dev分支，并和远程库的dev分支对应起来：
+git switch -c dev origin/dev
+# 把当前分支的最新提交抓下来到本地合并：
+git pull
+# 将已存在的dev分支和远程的dev分支进行链接：
+git branch --set-upstream-to=origin/dev dev
+```
+
+多人协作的工作模式通常是这样：
+
+  1. 首先，可以试图用git push origin branch-name推送自己的修改；
+  2. 如果推送失败，则因为远程分支比你的本地更新，需要先用git pull试图合并；
+  3. 如果合并有冲突，则解决冲突，并在本地提交；
+  4. 没有冲突或者解决掉冲突后，再用git push origin branch-name推送就能成功！
+
+如果git pull提示no tracking information，则说明本地分支和远程分支的链接关系没有创建，用命令git branch --set-upstream-to branch-name origin/branch-name。
+
+### Rebase
+
+```bash
+git rebase
+```
+
+- rebase操作可以把**本地未push的分叉提交历史整理成直线**；
+- rebase的目的是使得我们在查看历史提交的变化时更容易，因为分叉的提交需要三方对比。
+
+## 标签管理
