@@ -230,7 +230,7 @@ public class User {
 ```XML
 <web-app>
     <display-name>Archetype Created Web Application</display-name>
-
+    <!-- 这是由Servlet容器实例化的一个WebFilter，只不过实例化的对象是由Spring框架提供的。 -->
     <filter>
         <filter-name>encodingFilter</filter-name>
         <filter-class>org.springframework.web.filter.CharacterEncodingFilter</filter-class>
@@ -255,9 +255,7 @@ public class User {
 
 因为这种Filter和我们业务关系不大，**注意到CharacterEncodingFilter其实和Spring的IoC容器没有任何关系，两者均互不知晓对方的存在（为何无关，请参考第一节）**，因此，配置这种Filter十分简单。
 
-再考虑这样一个问题：如果允许用户使用Basic模式进行用户验证，即在HTTP请求中添加头Authorization: Basic email:password，这个需求如何实现？
-
-编写一个AuthFilter是最简单的实现方式：
+再考虑这样一个问题：如果允许用户使用Basic模式进行用户验证，即在HTTP请求中添加头Authorization: Basic email:password，这个需求如何实现。编写一个AuthFilter是最简单的实现方式：
 
 ```Java
 @Component
@@ -285,4 +283,161 @@ public class AuthFilter implements Filter {
 }
 ```
 
-在Spring中创建的这个AuthFilter是一个普通Bean，Servlet容器并不知道，所以它不会起作用。
+在Spring中创建的这个AuthFilter是一个普通Bean，**Servlet容器并不知道它能作为Filter组件**，所以它不会起作用。在Web开发中，我们使用WebFilter注解一个Filter，然后由Web服务器来加载它，但在这里注解Component会使其WebFilter注解失效。
+
+**如果我们直接在web.xml中声明这个AuthFilter，注意到AuthFilter的实例将由Servlet容器而不是Spring容器初始化，因此，@Autowire根本不生效，用于登录的UserService成员变量永远是null**。
+
+所以，得通过一种方式，**让Servlet容器实例化的Filter，间接引用Spring容器实例化的AuthFilter**。Spring MVC提供了一个DelegatingFilterProxy，专门来干这个事情：
+
+```XML
+<web-app>
+    <filter>
+        <filter-name>authFilter</filter-name>
+        <filter-class>org.springframework.web.filter.DelegatingFilterProxy</filter-class>
+    </filter>
+
+    <filter-mapping>
+        <filter-name>authFilter</filter-name>
+        <url-pattern>/*</url-pattern>
+    </filter-mapping>
+    ...
+</web-app>
+```
+
+我们来看实现原理：
+
+  1. Servlet容器从web.xml中读取配置，实例化DelegatingFilterProxy，注意命名是authFilter；
+  2. Spring容器通过扫描@Component实例化AuthFilter。
+
+**当DelegatingFilterProxy生效后，它会自动查找注册在ServletContext上的Spring容器，再试图从容器中查找名为authFilter的Bean，也就是我们用@Component声明的AuthFilter**。
+
+**DelegatingFilterProxy将请求代理给AuthFilter**，核心代码如下：
+
+```Java
+public class DelegatingFilterProxy implements Filter {
+    private Filter delegate;
+    public void doFilter(...) throws ... {
+        if (delegate == null) {
+            delegate = findBeanFromSpringContainer();
+        }
+        delegate.doFilter(req, resp, chain);
+    }
+}
+```
+
+这就是一个代理模式的简单应用。我们画个图表示它们之间的引用关系如下：
+
+<img src="./image/DelegatingFilterProxy.png">
+
+如果在web.xml中配置的Filter名字和Spring容器的Bean的名字不一致，那么需要指定Bean的名字。实际应用时，尽量保持名字一致，以减少不必要的配置。
+
+验证AuthFilter是否生效，携带请求头Authorization: Basic email:password，请求/profile路径。
+
+如果AuthFilter生效，则拦截所有请求，并对携带指定请求头的请求尝试执行登录逻辑，不管登录逻辑是否成功，都会让请求继续向后转发。
+
+<img src="./image/filter-req.png">
+
+如果登录逻辑验证成功，则访问/profile路径将直接返回profile页面，因为验证逻辑会将user对象放入到session中；如果登录逻辑验证失败，则重定向至/signin路径。另外可以看到控制台中有关Basic模式的验证逻辑打印了两次，因为重定向实际上是让浏览器发送一个新的请求到服务端，**并且这个新的请求会携带之前请求的请求头**，因此/signin路径同样被拦截器所拦截，但是由于验证逻辑再次失败，只返回了signin页面。
+
+## 使用Interceptor
+
+Filter组件是由Servlet容器进行管理的，它在Spring MVC的Web应用程序中作用范围如下：
+
+<img src="./image/filter-mvc.png">
+
+上图虚线框就是Filter2的拦截范围，Filter组件实际上并不知道后续内部处理是通过Spring MVC提供的DispatcherServlet还是其他Servlet组件，因为Filter是Servlet规范定义的标准组件，它可以应用在任何基于Servlet的程序中。
+
+如果只基于Spring MVC开发应用程序，还可以使用Spring MVC提供的一种功能类似Filter的拦截器：Interceptor。和Filter相比，Interceptor拦截范围不是后续整个处理流程，而是仅针对Controller拦截：
+
+<img src="./image/interceptor-mvc.png">
+
+所以，Interceptor的拦截范围其实就是Controller方法，它实际上就相当于基于AOP的方法拦截。因为Interceptor只拦截Controller方法，所以要注意，返回ModelAndView后，后续对View的**渲染**就脱离了Interceptor的拦截范围。
+
+使用Interceptor的好处是Interceptor本身是Spring管理的Bean，因此注入任意Bean都非常简单（可以理解为在上一节我们为了使用UserService的业务，必须将其定义为一个Spring容器组件，然后在web.xml间接引用为一个Servlet组件Filter）。此外，可以应用多个Interceptor，并通过简单的@Order指定顺序（这个是个好处，可以指定顺序）。我们先写一个LoggerInterceptor：
+
+```Java
+@Order(1)
+@Component
+public class LoggerInterceptor implements HandlerInterceptor {
+    final Logger logger = LoggerFactory.getLogger(getClass());
+    // Controller方法调用前执行，顺序在前的先执行
+    @Override
+    public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
+        // 打印请求路径
+        this.logger.info("preHandle {}...", request.getRequestURI());
+        if (request.getParameter("debug") != null) {
+            // 在请求中获取到debug参数，直接处理响应，返回false表示无需调用Controller方法继续处理了，通常在认证或者安全检查失败时直接返回错误响应
+            PrintWriter pw = response.getWriter();
+            pw.write("<p>DEBUG MODE</p>");
+            pw.flush();
+            return false;
+        }
+        // 返回true表示将请求继续交由后续处理，可能是Controller方法也可能是另外的Interceptor
+        return true;
+    }
+    // Controller方法正常返回后执行
+    @Override
+    public void postHandle(HttpServletRequest request, HttpServletResponse response, Object handler, ModelAndView modelAndView) throws Exception {
+        this.logger.info("postHandle {}.", request.getRequestURI());
+        // 能够捕获ModelAndView对象，继续向其添加一些通用数据，很多页面需要的全局数据如Copyright信息等都可以放到这里，无需在每个Controller方法中重复添加
+        if (modelAndView != null) {
+            modelAndView.addObject("__time__", LocalDateTime.now());
+        }
+    }
+    // 无论Controller方法是否抛异常都会执行，参数ex就是Controller方法抛出的异常（未抛出异常是null）
+    @Override
+    public void afterCompletion(HttpServletRequest request, HttpServletResponse response, Object handler, Exception ex) throws Exception {
+        this.logger.info("afterCompletion {}: exception = {}", request.getRequestURI(), ex);
+    }
+}
+```
+
+一个Interceptor必须实现HandlerInterceptor接口，要让拦截器生效，我们在WebMvcConfigurer中注册所有的Interceptor（写一次注册所有，后面再写Interceptor就不需要像上一节写Filter组件时，要让其生效则必须在web.xml里间接引用）：
+
+```Java
+@Bean
+WebMvcConfigurer createWebMvcConfigurer(@Autowired HandlerInterceptor[] interceptors) {
+    return new WebMvcConfigurer() {
+        public void addInterceptors(InterceptorRegistry registry) {
+            for (var interceptor : interceptors) {
+                registry.addInterceptor(interceptor);
+            }
+        }
+        ...
+    };
+}
+```
+
+在Controller中，Spring MVC还允许定义基于@ExceptionHandler注解的异常处理方法。我们来看具体的示例代码：
+
+```Java
+@Controller
+public class UserController {
+    @GetMapping("/resetPassword")
+    public ModelAndView resetPassword() {
+        throw new UnsupportedOperationException("Not supported yet!");
+    }
+
+    @ExceptionHandler(RuntimeException.class)
+    public ModelAndView handleUnknowException(Exception ex) {
+        return new ModelAndView("500.html", Map.of("error", ex.getClass().getSimpleName(), "message", ex.getMessage()));
+    }
+    ...
+}
+```
+
+异常处理方法没有固定的方法签名，可以传入Exception、HttpServletRequest等，返回值可以是void，也可以是ModelAndView，上述代码通过@ExceptionHandler(RuntimeException.class)表示当发生RuntimeException的时候，就自动调用此方法处理。注意到我们返回了一个新的ModelAndView，这样在应用程序内部**如果发生了预料之外的异常**，可以给用户显示一个出错页面，而不是简单的500 Internal Server Error或404 Not Found。
+
+使用ExceptionHandler时，要注意它仅作用于**当前**的Controller，即ControllerA中定义的一个ExceptionHandler方法对ControllerB不起作用。
+
+如果我们有很多Controller，每个Controller都需要处理一些通用的异常，例如LoginException，思考一下应该怎么避免重复代码。
+
+<img src="./image/思考.png">
+
+## 处理CORS
+
+CORS可以控制指定域的页面JavaScript能否访问API。
+
+## 国际化
+
+## 异步处理
