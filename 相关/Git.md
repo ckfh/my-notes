@@ -290,3 +290,51 @@ git rebase
 - rebase的目的是使得我们在查看历史提交的变化时更容易，因为分叉的提交需要三方对比。
 
 ## 标签管理
+
+标签也是版本库的一个快照。标签就是一个让人容易记住的有意义的名字，它跟某个commit绑在一起。
+
+### 创建标签
+
+```bash
+# 打在最新提交的commit上：
+git tag <tag name>
+# 查看所有标签：
+git tag
+# 打在指定commit上：
+git tag <tag name> <commit id>
+# 查看标签信息：
+git show <tag name>
+# 创建带有说明信息的标签：
+git tag -a <tag name> -m <message> <commit id>
+```
+
+**标签总是和某个commit挂钩。如果这个commit既出现在master分支，又出现在dev分支，那么在这两个分支上都可以看到这个标签**。
+
+### 操作标签
+
+```bash
+# 删除标签：
+git tag -d <tag name>
+# 推送标签到远程：
+git push origin <tag name>
+# 一次性推送全部尚未推送到远程的本地标签：
+git push origin --tags
+```
+
+如果标签已经推送到远程，要删除远程标签就麻烦一点：
+
+```bash
+git tag -d <tag name>
+git push origin :refs/tags/<tag name>
+```
+
+## 自定义Git
+
+### 忽略特殊文件
+
+忽略某些文件时，需要编写.gitignore提交到版本库。
+
+```bash
+# 检查忽略的规则：
+git check-ignore -v <file name>
+```
