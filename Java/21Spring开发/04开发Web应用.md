@@ -149,6 +149,11 @@ public class RestController {
 @DeleteMapping
 @PutMapping
 @GetMapping
+
+@RequestMapping(path = "/users", method = RequestMethod.POST)
+@RequestMapping(path = "/users", method = RequestMethod.DELETE)
+@RequestMapping(path = "/users", method = RequestMethod.PUT)
+@RequestMapping(path = "/users", method = RequestMethod.GET)
 ```
 
 ```Java

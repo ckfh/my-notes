@@ -207,7 +207,7 @@ Spring的IoC容器同时支持属性注入和构造方法注入，并允许混�
 
 ## 装配Bean
 
-![装配bean](./image/装配bean-工程结构.jpg)
+<img src="./image/装配bean-工程结构.jpg">
 
 我们用Maven创建工程并引入spring-context依赖。
 
