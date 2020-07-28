@@ -112,7 +112,7 @@ Java Web的基础：Servlet容器，以及标准的Servlet组件：
 
 <img src="./image/rest-通俗版.png">
 
-在Web应用中，除了需要使用MVC给用户显示页面外，还有一类API接口，我们称之为REST，通常输入输出都是JSON，便于第三方调用或者使用页面JavaScript与之交互。
+在Web应用中，除了需要使用MVC给用户显示页面外，还有一类API接口，我们称之为REST，通常**输入输出都是JSON**，便于第三方调用或者使用页面JavaScript与之交互。
 
 直接在Controller中处理JSON是可以的，因为Spring MVC的@GetMapping和@PostMapping都支持指定输入和输出的格式。如果我们想接收JSON，输出JSON，那么可以这样写：
 
@@ -143,6 +143,13 @@ public class RestController {
 <img src="./image/rest-response.png">
 
 直接用Spring的Controller配合一大堆注解写REST太麻烦了，因此，Spring还额外提供了一个@RestController注解，使用@RestController替代@Controller后，每个方法自动变成API接口方法。我们还是以实际代码举例，编写ApiController如下：
+
+```Java
+@PostMapping
+@DeleteMapping
+@PutMapping
+@GetMapping
+```
 
 ```Java
 @RestController
@@ -179,7 +186,7 @@ public class ApiController {
 }
 ```
 
-使用@RestController可以方便地编写REST服务，Spring默认使用JSON作为输入和输出。
+使用@RestController可以方便地编写REST服务，**Spring默认使用JSON作为输入和输出**。
 
 编写REST接口只需要定义@RestController，然后，每个方法都是一个API接口，输入和输出只要能被Jackson序列化或反序列化为JSON就没有问题。我们用浏览器测试GET请求，可直接显示JSON响应：
 
@@ -441,3 +448,15 @@ CORS可以控制指定域的页面JavaScript能否访问API。
 ## 国际化
 
 ## 异步处理
+
+在Servlet模型中，每个请求都是由某个线程处理，然后，将响应写入IO流，发送给客户端。从开始处理请求，到写入响应完成，都是在同一个线程中处理的。
+
+实现Servlet容器的时候，只要每处理一个请求，就创建一个新线程处理它，就能保证正确实现了Servlet线程模型。在实际产品中，例如Tomcat，总是通过线程池来处理请求，它仍然符合一个请求从头到尾都由某一个线程处理。
+
+这种线程模型非常重要，因为Spring的JDBC事务是基于ThreadLocal实现的，如果在处理过程中，一会由线程A处理，一会又由线程B处理，那事务就全乱套了。此外，很多安全认证，也是基于ThreadLocal实现的，可以保证在处理请求的过程中，各个线程互不影响。
+
+但是，如果一个请求处理的时间较长，例如几秒钟甚至更长，那么，这种基于线程池的同步模型很快就会把所有线程耗尽，导致服务器无法响应新的请求。如果把长时间处理的请求改为异步处理，那么线程池的利用率就会大大提高。Servlet从3.0规范开始添加了异步支持，允许对一个请求进行异步处理。
+
+## 使用WebSocket
+
+WebSocket是一种基于HTTP的长链接技术。传统的HTTP协议是一种请求-响应模型，如果浏览器不发送请求，那么服务器无法主动给浏览器推送数据。如果需要定期给浏览器推送数据，例如股票行情，或者不定期给浏览器推送数据，例如在线聊天，基于HTTP协议实现这类需求，只能依靠浏览器的JavaScript定时轮询，效率很低且实时性不高。
