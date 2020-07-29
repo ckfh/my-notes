@@ -316,7 +316,7 @@ public class MetricAspect {
 
 注意metric()方法标注了@Around("@annotation(metricTime)")，它的意思是，符合条件的目标方法是带有@MetricTime注解的方法，因为metric()方法参数类型是MetricTime（注意参数名是metricTime不是MetricTime），我们通过它获取性能监控的名称。
 
-![注解](./image/使用AOP-注解.jpg)
+<img src="./image/使用AOP-注解.jpg">
 
 有了@MetricTime注解，再配合MetricAspect，任何Bean，只要方法标注了@MetricTime注解，就可以自动实现性能监控。
 

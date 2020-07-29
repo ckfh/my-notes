@@ -448,7 +448,55 @@ public class UserController {
 
 ## 处理CORS
 
-CORS可以控制指定域的页面JavaScript能否访问API。
+**同源要求域名要完全相同（a.com和www.a.com不同）（域名相同URI可以不同，也就是说在同一个域名下对不同的URI发起请求），协议要相同（http和https不同），端口要相同**。
+
+如果A站的JavaScript访问B站API的时候，B站能够返回响应头`Access-Control-Allow-Origin: http://a.com`，那么，*浏览器*就允许A站的JavaScript访问B站的API。
+
+注意到跨域访问能否成功，取决于B站是否愿意给A站返回一个正确的Access-Control-Allow-Origin响应头，所以决定权永远在提供API的服务方手中。
+
+```Java
+@CrossOrigin(origins = "http://local.liaoxuefeng.com:8080")
+@RestController
+@RequestMapping("/api")
+public class ApiController {
+    ...
+}
+```
+
+上述定义在ApiController处的@CrossOrigin指定了只允许来自`local.liaoxuefeng.com`跨域访问，允许多个域访问需要写成数组形式，例如`origins = ({"http://a.com", "https://www.b.com"})`。如果要允许任何域访问，写成`origins = "*"`即可。
+
+```Java
+@Bean
+WebMvcConfigurer createWebMvcConfigurer() {
+    return new WebMvcConfigurer() {
+        @Override
+        public void addCorsMappings(CorsRegistry registry) {
+            registry.addMapping("/api/**")
+                    .allowedOrigins("http://local.liaoxuefeng.com:8080")
+                    .allowedMethods("GET", "POST")
+                    .maxAge(3600);
+            // 可以继续添加其他URL规则:
+            // registry.addMapping("/rest/v2/**")...
+        }
+    };
+}
+```
+
+[路径映射中的*号个数](https://www.cnblogs.com/powerwu/articles/8079391.html)
+
+这种方式可以创建一个全局CORS配置，如果仔细地设计URL结构，那么可以一目了然地看到各个URL的CORS规则，推荐使用这种方式配置CORS。
+
+<img src="./image/CORS01.png">
+
+<img src="./image/CORS02.png">
+
+<img src="./image/CORS03.png">
+
+当我使用`http://127.0.0.1:8080/`访问首页时，三个跨域访问API的JavaScript语句只有域名完全相同的语句请求成功，其它都被拒绝；同理使用`http://localhost:8080/`访问首页时，也只有域名相同的访问成功；使用全局CORS配置的映射路径`http://local.liaoxuefeng.com:8080/`访问首页时，可以看到访问语句都请求成功。
+
+[有关local.liaoxuefeng.com域名也能访问首页的问题](https://www.liaoxuefeng.com/discuss/1279869501571105/1353230797766689)
+
+**所以说即使域名解析后指向的IP地址相同也不能绕过CORS的控制，域名是域名，IP地址是IP地址，CORS要求的目标是域名不是IP地址**。
 
 ## 国际化
 
