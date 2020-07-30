@@ -513,3 +513,24 @@ WebMvcConfigurer createWebMvcConfigurer() {
 ## 使用WebSocket
 
 WebSocket是一种基于HTTP的长链接技术。传统的HTTP协议是一种请求-响应模型，如果浏览器不发送请求，那么服务器无法主动给浏览器推送数据。如果需要定期给浏览器推送数据，例如股票行情，或者不定期给浏览器推送数据，例如在线聊天，基于HTTP协议实现这类需求，只能依靠浏览器的JavaScript定时轮询，效率很低且实时性不高。
+
+因为HTTP本身是基于TCP连接的，所以，WebSocket在HTTP协议的基础上做了一个简单的升级，即建立TCP连接后，浏览器发送请求时，附带几个头：
+
+```text
+GET /chat HTTP/1.1
+Host: www.example.com
+Upgrade: websocket
+Connection: Upgrade
+```
+
+就表示客户端希望升级连接，变成长连接的WebSocket，服务器返回升级成功的响应：
+
+```text
+HTTP/1.1 101 Switching Protocols
+Upgrade: websocket
+Connection: Upgrade
+```
+
+收到成功响应后表示WebSocket“握手”成功，这样，代表WebSocket的这个TCP连接将不会被服务器关闭，而是一直保持，服务器可随时向浏览器推送消息，浏览器也可随时向服务器推送消息。双方推送的消息既可以是文本消息，也可以是二进制消息，一般来说，绝大部分应用程序会推送基于JSON的文本消息。
+
+现代浏览器都已经支持WebSocket协议，服务器则需要底层框架支持。Java的Servlet规范从3.1开始支持WebSocket，所以，必须选择支持Servlet 3.1或更高规范的Servlet容器，才能支持WebSocket。最新版本的Tomcat、Jetty等开源服务器均支持WebSocket。
