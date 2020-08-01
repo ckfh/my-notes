@@ -233,6 +233,8 @@ public class User {
 }
 ```
 
+<img src="./image/为什么.png">
+
 ## 集成Filter
 
 简单地使用一个EncodingFilter，在全局范围类给HttpServletRequest和HttpServletResponse强制设置为UTF-8编码。
@@ -267,6 +269,8 @@ public class User {
 
 因为这种Filter和我们业务关系不大，**注意到CharacterEncodingFilter其实和Spring的IoC容器没有任何关系，两者均互不知晓对方的存在（为何无关，请参考第一节）**，因此，配置这种Filter十分简单。
 
+**如果想要返回包含中文内容的JSON数据，最好指定请求头`Accept`为`application/json;charset=UTF-8`，以及使用`Map.of(k, v)`来携带JSON数据进行返回**。
+
 再考虑这样一个问题：如果允许用户使用Basic模式进行用户验证，即在HTTP请求中添加头Authorization: Basic email:password，这个需求如何实现。编写一个AuthFilter是最简单的实现方式：
 
 ```Java
@@ -295,7 +299,7 @@ public class AuthFilter implements Filter {
 }
 ```
 
-在Spring中创建的这个AuthFilter是一个普通Bean，**Servlet容器并不知道它能作为Filter组件**，所以它不会起作用。在Web开发中，我们使用WebFilter注解一个Filter，然后由Web服务器来加载它，但在这里注解Component会使其WebFilter注解失效。
+在Spring中创建的这个AuthFilter是一个普通Bean，**Servlet容器并不知道它能作为Filter组件**，所以它不会起作用。在Web开发中，我们使用WebFilter注解一个Filter，然后由Web服务器来加载它，但在这里注解Component会使其WebFilter注解失效。**可以想象一下这个实例先后会被Web容器以及Spring容器初始化，这种初始化两次的逻辑应该是不允许的**。
 
 **如果我们直接在web.xml中声明这个AuthFilter，注意到AuthFilter的实例将由Servlet容器而不是Spring容器初始化，因此，@Autowire根本不生效，用于登录的UserService成员变量永远是null**。
 
@@ -320,6 +324,8 @@ public class AuthFilter implements Filter {
 
   1. Servlet容器从web.xml中读取配置，实例化DelegatingFilterProxy，注意命名是authFilter；
   2. Spring容器通过扫描@Component实例化AuthFilter。
+
+**两次实例化的对象不同，用先实例化的引用后实例化的**。
 
 **当DelegatingFilterProxy生效后，它会自动查找注册在ServletContext上的Spring容器，再试图从容器中查找名为authFilter的Bean，也就是我们用@Component声明的AuthFilter**。
 

@@ -1,5 +1,9 @@
 # 记录我自己踩过又老是忘记的坑
 
+## 有关web应用程序中为请求和响应进行强制转码UTF-8
+
+场景：URL携带中文参数请求一个JSON数据，JSON数据包含中文。如果直接返回字符串对象，例如`String.format("{\"name\":\"%s\"}", name)`，必须在请求头`Accept`中指定编码格式`application/json;charset=utf-8`，否则返回的响应消息中的响应头`Content-Type`会默认以`application/json;charset=ISO-8859-1`的其它编码格式在浏览器进行展示，这样即使将响应消息进行转码为`UTF-8`，但是浏览器本地还是以其它编码格式进行展示，导致中文乱码；但是使用如果不是返回字符串对象，例如`Map.of("name", name)`，那么浏览器本地默认以`UTF-8`进行编码展示。
+
 ## 格式化字符串
 
 ```Java
