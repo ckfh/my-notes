@@ -325,7 +325,7 @@ public class AuthFilter implements Filter {
   1. Servlet容器从web.xml中读取配置，实例化DelegatingFilterProxy，注意命名是authFilter；
   2. Spring容器通过扫描@Component实例化AuthFilter。
 
-**两次实例化的对象不同，用先实例化的引用后实例化的**。
+**两次实例化的对象不同，并用先实例化的DelegatingFilterProxy引用后实例化的AuthFilter**。
 
 **当DelegatingFilterProxy生效后，它会自动查找注册在ServletContext上的Spring容器，再试图从容器中查找名为authFilter的Bean，也就是我们用@Component声明的AuthFilter**。
 
