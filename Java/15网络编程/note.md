@@ -66,7 +66,7 @@ class Handler extends Thread {
         writer.write("hello\n");
         writer.flush();
         for (; ; ) {
-            // 之后服务器端不断从客户端接收消息。程序中所使用的流都是IO包中的流，属于阻塞IO：
+            // 之后服务器端不断从客户端接收消息。程序中所使用的流都是IO包中的流，属于同步IO：
             String s = reader.readLine();
             if ("bye".equals(s)) {
                 writer.write("bye\n");
@@ -316,3 +316,37 @@ public class Main {
 Java提供了HttpClient作为新的HTTP客户端编程接口用于取代老的HttpURLConnection接口；
 
 HttpClient使用链式调用并通过内置的BodyPublishers和BodyHandlers来更方便地处理数据。
+
+## 发送Email
+
+<img src="./image/email01.png">
+
+我们把类似Outlook这样的邮件软件称为MUA：Mail User Agent，意思是给用户服务的邮件代理；邮件服务器则称为MTA：Mail Transfer Agent，意思是邮件中转的代理；最终到达的邮件服务器称为MDA：Mail Delivery Agent，意思是邮件到达的代理。电子邮件一旦到达MDA，就不再动了。实际上，电子邮件通常就存储在MDA服务器的硬盘上，然后等收件人通过软件或者登陆浏览器查看邮件。
+
+**比如我们使用QQ邮箱网页端（MUA）给163邮箱发送邮件，邮件先发送到QQ邮箱的服务器（MTA），然后再一路中转到163邮箱的服务器（MDA），最后我们通过163邮箱的邮件代理（MUA）查看邮件**。
+
+MTA和MDA这样的服务器软件通常是现成的，我们不关心这些服务器内部是如何运行的。要发送邮件，我们关心的是如何编写一个MUA的软件，把邮件发送到MTA上。
+
+MUA到MTA发送邮件的协议就是SMTP协议，它是Simple Mail Transport Protocol的缩写，使用标准端口25，也可以使用加密端口465或587。
+
+SMTP协议是一个建立在TCP之上的协议，任何程序发送邮件都必须遵守SMTP协议。使用Java程序发送邮件时，我们无需关心SMTP协议的底层原理，只需要使用JavaMail这个标准API就可以直接发送邮件。
+
+使用JavaMail API发送邮件本质上是一个MUA软件通过SMTP协议发送邮件至MTA服务器；
+
+打开调试模式可以看到详细的SMTP交互信息；
+
+某些邮件服务商需要开启SMTP，并需要独立的SMTP登录密码。
+
+常见问题：
+
+  1. 如果用户名或口令错误，会导致535登录失败；
+  2. 如果登录用户和发件人不一致，会导致554拒绝发送错误；
+  3. 有些时候，如果邮件主题和正文过于简单，会导致554被识别为垃圾邮件的错误。
+
+## 接收Email
+
+接收Email则相反，因为邮件最终到达收件人的MDA服务器，所以，接收邮件是收件人用自己的客户端把邮件从MDA服务器上抓取到本地的过程。
+
+接收邮件使用最广泛的协议是POP3：Post Office Protocol version 3，它也是一个建立在TCP连接之上的协议。POP3服务器的标准端口是110，如果整个会话需要加密，那么使用加密端口995。
+
+另一种接收邮件的协议是IMAP：Internet Mail Access Protocol，它使用标准端口143和加密端口993。IMAP和POP3的主要区别是，IMAP协议在本地的所有操作都会自动同步到服务器上，并且，IMAP可以允许用户在邮件服务器的收件箱中创建文件夹。
