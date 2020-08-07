@@ -825,7 +825,7 @@ ZoneId createZoneId() {
 }
 ```
 
-除了根据@Profile条件来决定是否创建某个Bean外，Spring还可以根据@Conditional决定是否创建某个Bean。
+除了根据@Profile条件来决定是否创建某个Bean外，Spring还可以根据@Conditional配合环境变量决定是否创建某个Bean。
 
 ```Java
 // 它的意思是，如果满足OnSmtpEnvCondition的条件，才会创建SmtpMailService这个Bean。
