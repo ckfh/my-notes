@@ -295,3 +295,349 @@ management:
 要特别注意暴露的URL的安全性，例如，/actuator/env可以获取当前机器的所有环境变量，不可暴露给公网。
 
 ## 使用Profiles
+
+Profile表示一个环境的概念，如开发、测试和生产这3个环境，或者按git分支定义master、dev这些环境。
+
+```yml
+server:
+  port: ${APP_PORT:8080}
+
+spring:
+  application:
+    name: ${APP_NAME:unnamed}
+  datasource:
+    url: jdbc:hsqldb:file:testdb
+    username: sa
+    password:
+    driver-class-name: org.hsqldb.jdbc.JDBCDriver
+    hikari:
+      auto-commit: false
+      connection-timeout: 3000
+      validation-timeout: 3000
+      max-lifetime: 60000
+      maximum-pool-size: 20
+      minimum-idle: 1
+
+pebble:
+  suffix:
+  cache: false
+
+---
+
+spring:
+  profiles: test
+
+server:
+  port: 8000
+
+---
+
+spring:
+  profiles: production
+
+server:
+  port: 80
+
+pebble:
+  cache: true
+```
+
+IDEA可以直接在启动配置中指定环境，切换环境时，会覆盖default环境中的相同配置，其余配置仍按照default环境中的配置。
+
+假设我们需要一个存储服务，在本地开发时，直接使用文件存储即可，但是，在测试和生产环境，需要存储到云端如S3上，如何通过Profile实现该功能？
+
+```java
+// 定义存储接口StorageService：
+public interface StorageService {
+
+    // 根据URI打开InputStream:
+    InputStream openInputStream(String uri) throws IOException;
+
+    // 根据扩展名+InputStream保存并返回URI:
+    String store(String extName, InputStream input) throws IOException;
+}
+// 本地存储可通过LocalStorageService实现：
+@Component
+@Profile("default")
+public class LocalStorageService implements StorageService {
+    @Value("${storage.local:/var/static}")
+    String localStorageRootDir;
+
+    final Logger logger = LoggerFactory.getLogger(getClass());
+
+    private File localStorageRoot;
+
+    @PostConstruct
+    public void init() {
+        logger.info("Intializing local storage with root dir: {}", this.localStorageRootDir);
+        this.localStorageRoot = new File(this.localStorageRootDir);
+    }
+
+    @Override
+    public InputStream openInputStream(String uri) throws IOException {
+        File targetFile = new File(this.localStorageRoot, uri);
+        return new BufferedInputStream(new FileInputStream(targetFile));
+    }
+
+    @Override
+    public String store(String extName, InputStream input) throws IOException {
+        String fileName = UUID.randomUUID().toString() + "." + extName;
+        File targetFile = new File(this.localStorageRoot, fileName);
+        try (OutputStream output = new BufferedOutputStream(new FileOutputStream(targetFile))) {
+            input.transferTo(output);
+        }
+        return fileName;
+    }
+}
+// 云端存储可通过CloudStorageService实现：
+@Component
+@Profile("!default")
+public class CloudStorageService implements StorageService {
+    @Value("${storage.cloud.bucket:}")
+    String bucket;
+
+    @Value("${storage.cloud.access-key:}")
+    String accessKey;
+
+    @Value("${storage.cloud.access-secret:}")
+    String accessSecret;
+
+    final Logger logger = LoggerFactory.getLogger(getClass());
+
+    @PostConstruct
+    public void init() {
+        // TODO:
+        logger.info("Initializing cloud storage...");
+    }
+
+    @Override
+    public InputStream openInputStream(String uri) throws IOException {
+        // TODO:
+        throw new IOException("File not found: " + uri);
+    }
+
+    @Override
+    public String store(String extName, InputStream input) throws IOException {
+        // TODO:
+        throw new IOException("Unable to access cloud storage.");
+    }
+}
+```
+
+注意到LocalStorageService使用了条件装配@Profile("default")，即默认启用LocalStorageService，而CloudStorageService使用了条件装配@Profile("!default")，即非default环境时，自动启用CloudStorageService。这样，一套代码，就实现了不同环境启用不同的配置。
+
+## 使用Conditional
+
+使用Profile能根据不同的Profile进行条件装配，但是Profile控制比较糙，如果想要**精细控制**，例如，配置本地存储，AWS存储和阿里云存储，将来很可能会增加Azure存储等，用Profile就很难实现。
+
+Spring本身提供了条件装配@Conditional，但是要**自己编写**比较复杂的Condition来做判断，比较麻烦。Spring Boot则为我们准备好了几个非常有用的条件：
+
+- @ConditionalOnProperty：如果有指定的配置，条件生效；
+- @ConditionalOnBean：如果有指定的Bean，条件生效；
+- @ConditionalOnMissingBean：如果没有指定的Bean，条件生效；
+- @ConditionalOnMissingClass：如果没有指定的Class，条件生效；
+- @ConditionalOnWebApplication：在Web环境中条件生效；
+- @ConditionalOnExpression：根据表达式判断条件是否生效。
+
+```yml
+storage:
+  type: ${STORAGE_TYPE:local}
+```
+
+```Java
+// 当指定配置为local，或者配置不存在，均启用LocalStorageService：
+@Component
+@ConditionalOnProperty(value = "storage.type", havingValue = "local", matchIfMissing = true)
+public class LocalStorageService implements StorageService {
+    ...
+}
+@Component
+@ConditionalOnProperty(value = "storage.type", havingValue = "aws")
+public class AwsStorageService implements StorageService {
+    ...
+}
+@Component
+@ConditionalOnProperty(value = "storage.type", havingValue = "aliyun")
+public class AliyunStorageService implements StorageService {
+    ...
+}
+```
+
+## 加载配置文件
+
+多次使用@Value引用同一个配置项不但麻烦，而且@Value使用字符串，缺少编译器检查，容易造成多处引用不一致。
+
+为了更好地管理配置，Spring Boot允许创建一个Bean，持有一组配置，并由Spring Boot自动注入。
+
+```yml
+storage:
+  local:
+    # 文件存储根目录:
+    root-dir: ${STORAGE_LOCAL_ROOT:/var/storage}
+    # 最大文件大小，默认100K:
+    max-size: ${STORAGE_LOCAL_MAX_SIZE:102400}
+    # 是否允许空文件:
+    allow-empty: false
+    # 允许的文件类型:
+    allow-types: jpg, png, gif
+```
+
+```Java
+@Configuration
+@ConfigurationProperties("storage.local")
+public class StorageConfiguration {
+
+    private String rootDir;
+    private int maxSize;
+    private boolean allowEmpty;
+    private List<String> allowTypes;
+
+    // TODO: getters and setters
+}
+@Component
+public class StorageService {
+    final Logger logger = LoggerFactory.getLogger(getClass());
+
+    @Autowired
+    StorageConfiguration storageConfig;
+
+    @PostConstruct
+    public void init() {
+        logger.info("Load configuration: root-dir = {}", storageConfig.getRootDir());
+        logger.info("Load configuration: max-size = {}", storageConfig.getMaxSize());
+        logger.info("Load configuration: allowed-types = {}", storageConfig.getAllowTypes());
+    }
+}
+```
+
+这样一来，引入storage.local的相关配置就很容易了，因为只需要注入StorageConfiguration这个Bean，这样可以由编译器检查类型，无需编写重复的@Value注解。
+
+## 禁用自动配置并配置多数据源
+
+Spring Boot大量使用自动配置和默认配置，极大地减少了代码，通常只需要加上几个注解，并按照默认规则设定一下必要的配置即可。例如，配置JDBC，默认情况下，只需要配置一个spring.datasource，Spring Boot就会自动创建出DataSource、JdbcTemplate、DataSourceTransactionManager，非常方便。
+
+但是，有时候，我们又必须要禁用某些自动配置。例如，系统有**主从**两个数据库，而Spring Boot的自动配置只能配一个。这个时候，针对DataSource相关的自动配置，就必须关掉。
+
+[主从数据库目的](https://zhuanlan.zhihu.com/p/50597960)
+
+```java
+@SpringBootApplication
+// 启动自动配置，但禁用指定的自动配置:
+@EnableAutoConfiguration(exclude = DataSourceAutoConfiguration.class)
+public class Application {
+    ...
+}
+```
+
+让我们一步一步开始编写支持主从数据库的功能。首先，我们需要把主从数据库配置写到application.yml中，仍然按照Spring Boot默认的格式写，但datasource改为datasource-master和datasource-slave：
+
+```yml
+spring:
+  datasource-master:
+    url: jdbc:hsqldb:file:testdb
+    username: sa
+    password:
+    driver-class-name: org.hsqldb.jdbc.JDBCDriver
+  datasource-slave:
+    url: jdbc:hsqldb:file:testdb
+    # 可替换为只有SELECT权限的只读用户:
+    username: sa
+    password:
+    driver-class-name: org.hsqldb.jdbc.JDBCDriver
+```
+
+注意到两个数据库实际上是同一个库。如果使用MySQL，可以创建一个只读用户，作为datasource-slave的用户来模拟一个从库。
+
+```Java
+// 创建两个HikariCP的DataSource：
+public class MasterDataSourceConfiguration {
+    @Bean("masterDataSourceProperties")
+    @ConfigurationProperties("spring.datasource-master")
+    DataSourceProperties dataSourceProperties() {
+        return new DataSourceProperties();
+    }
+
+    @Bean("masterDataSource")
+    DataSource dataSource(@Autowired @Qualifier("masterDataSourceProperties") DataSourceProperties props) {
+        return props.initializeDataSourceBuilder().build();
+    }
+}
+
+public class SlaveDataSourceConfiguration {
+    @Bean("slaveDataSourceProperties")
+    @ConfigurationProperties("spring.datasource-slave")
+    DataSourceProperties dataSourceProperties() {
+        return new DataSourceProperties();
+    }
+
+    @Bean("slaveDataSource")
+    DataSource dataSource(@Autowired @Qualifier("slaveDataSourceProperties") DataSourceProperties props) {
+        return props.initializeDataSourceBuilder().build();
+    }
+}
+// 注意到上述class并未添加@Configuration和@Component，要使之生效，可以使用@Import导入：
+@SpringBootApplication
+@EnableAutoConfiguration(exclude = DataSourceAutoConfiguration.class)
+// 导入自定义配置：
+@Import({ MasterDataSourceConfiguration.class, SlaveDataSourceConfiguration.class})
+public class Application {
+    ...
+}
+// 还需要一个最终的@Primary标注的DataSource，它采用Spring提供的AbstractRoutingDataSource，代码实现如下：
+class RoutingDataSource extends AbstractRoutingDataSource {
+    @Override
+    protected Object determineCurrentLookupKey() {
+        // 从ThreadLocal中取出key:
+        return RoutingDataSourceContext.getDataSourceRoutingKey();
+    }
+}
+```
+
+## 添加Filter
+
+Spring Boot会自动扫描所有的FilterRegistrationBean类型的Bean，然后，将它们返回的Filter自动注册到Servlet容器中，无需任何配置。
+
+```java
+@Order(10)
+@Component
+public class AuthFilterRegistrationBean extends FilterRegistrationBean<Filter> {
+    @Autowired
+    UserService userService;
+
+    @Override
+    public Filter getFilter() {
+        return new AuthFilter();
+    }
+    // 内部类：
+    class AuthFilter implements Filter {
+        ...
+    }
+}
+```
+
+FilterRegistrationBean本身不是Filter，它实际上是Filter的工厂。Spring Boot会调用getFilter()，把返回的Filter注册到Servlet容器中。因为我们可以在FilterRegistrationBean中注入需要的资源，然后，在返回的AuthFilter中，**这个内部类可以引用外部类的所有字段，自然也包括注入的UserService**，所以，整个过程完全基于Spring的IoC容器完成。
+
+再注意到AuthFilterRegistrationBean标记了一个@Order(10)，因为Spring Boot支持给多个Filter排序，数字小的在前面，所以，多个Filter的顺序是可以固定的。
+
+```java
+@Order(20)
+@Component
+public class ApiFilterRegistrationBean extends FilterRegistrationBean<Filter> {
+    @PostConstruct
+    public void init() {
+        // 调用继承的方法：
+        setFilter(new ApiFilter());
+        setUrlPatterns(List.of("/api/*"));
+    }
+
+    class ApiFilter implements Filter {
+        ...
+    }
+}
+```
+
+这个ApiFilterRegistrationBean和AuthFilterRegistrationBean又有所不同。因为我们要过滤URL，而不是针对所有URL生效，因此，在@PostConstruct方法中，通过setFilter()设置一个Filter实例后，再调用setUrlPatterns()传入要过滤的URL列表。
+
+## 集成Open API
+
+Open API是一个标准，它的主要作用是描述REST API，既可以作为文档给开发者阅读，又可以让机器根据这个文档自动生成客户端代码等。

@@ -842,7 +842,7 @@ public class OnSmtpEnvCondition implements Condition {
 }
 ```
 
-Spring只提供了@Conditional注解，具体判断逻辑还需要我们自己实现。Spring Boot提供了更多使用起来更简单的条件注解。
+Spring只提供了@Conditional注解，**具体判断逻辑还需要我们自己实现**。Spring Boot提供了更多使用起来更简单的条件注解。
 
 ```Java
 // 如果配置文件中存在app.smtp=true，则创建MailService：
