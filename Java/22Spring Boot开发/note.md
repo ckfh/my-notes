@@ -641,3 +641,32 @@ public class ApiFilterRegistrationBean extends FilterRegistrationBean<Filter> {
 ## 集成Open API
 
 Open API是一个标准，它的主要作用是描述REST API，既可以作为文档给开发者阅读，又可以让机器根据这个文档自动生成客户端代码等。
+
+```xml
+<dependency>
+    <groupId>org.springdoc</groupId>
+    <artifactId>springdoc-openapi-ui</artifactId>
+</dependency>
+```
+
+启动应用，打开浏览器输入`http://localhost:8080/swagger-ui.html`。
+
+引入springdoc-openapi-ui这个依赖后，它自动引入Swagger UI用来创建API文档。可以给API加入一些描述信息，例如：
+
+```java
+@RestController
+@RequestMapping("/api")
+public class ApiController {
+    ...
+    @Operation(summary = "Get specific user object by it's id.")
+    @GetMapping("/users/{id}")
+    public User user(@Parameter(description = "id of the user.") @PathVariable("id") long id) {
+        return userService.getUserById(id);
+    }
+    ...
+}
+```
+
+@Operation可以对API进行描述，@Parameter可以对参数进行描述，它们的目的是用于生成API文档的描述信息。
+
+## 访问Redis
