@@ -45,6 +45,9 @@ LRANGE friends 1 2
 LPOP friends # 删除并返回给客户端
 RPOP friends
 LLEN friends
+
+LPUSH mylist someelement # 从开头添加一个元素
+LTRIM mylist 0 99 # 修剪列表，保留0-99共100个元素，这样可以确保list当中元素不会超过100个
 ```
 
 ```bash
@@ -53,16 +56,20 @@ SADD superpowers "x-ray vision" "reflexes" # 同样可以指定多个元素
 SREM superpowers "reflexes" # 移除一个指定元素，1表示存在，0表示不存在
 SMEMBERS superpowers
 SISMEMBER superpowers "flight"
-SUNION superpowers birdpowers # 合并两个set
+SUNION superpowers birdpowers # 返回并集
 SPOP letters 2 # 随机移除2个元素，因为set是无序的
 SRANDMEMBER letters 3 # 随机返回3个元素，如果参数为负数，则可能返回重复元素
+
+SCARD myset # 返回set当中的个数
+SINTER myset1 myset2 # 返回交集
 ```
 
 ```bash
-ZADD hackers 1912 "Alan Turing" # 新建一个有序set，每个元素都有一个关联score，根据这个score进行排序
-ZADD hackers 1957 "Sophie Wilson"
+ZADD hackers 1912 "Alan Turing" # 新建一个有序set，每个元素都有一个关联score，根据这个score进行排序，score相同则作string比较
+ZADD hackers 1957 "Sophie Wilson" # 不能添加重复元素，但是能更新score
 ZADD hackers 1916 "Claude Shannon"
 ZRANGE hackers 0 -1
+ZSCORE hackers "Alan Turing"
 ```
 
 ```bash
@@ -76,4 +83,46 @@ HINCRBY user:1000 visits 1
 HINCRBY user:1000 visits 10
 HDEL user:1000 visits
 HINCRBY user:1000 visits 1
+```
+
+## 克隆一个twitter
+
+在redis中没有table这一概念。
+
+首先设计用户，它有用户ID、用户名、密码。其中，**使用用户唯一ID来命名包含用户数据的哈希key，这是键值存储中非常常见的设计模式**。
+
+```bash
+INCR next_user_id # 使用一个INCR命令保证全局用户ID的唯一
+HMSET user:${上面命令的返回值} username cat password cat # 每有一个新用户便新建一个user:ID的map，存储用户名及密码
+HSET users cat ${上上面命令的返回值} # 希望通过用户名获取用户ID，为此每有一个新用户，便向users这个map中放入用户名及对应ID
+```
+
+设计关注和被关注人，同时需要记录被关注时间和关注时间，为此使用sorted set最合适，使用时间作为score，用户ID作为元素。
+
+同样使用包含用户唯一ID的key name来命名每个用户的关注人和被关注人的sorted set。
+
+```bash
+ZADD followers:1000 1401267618 1234
+ZADD following:1000 1500000000 1234
+```
+
+设计每个用户的推文，需要按照时间顺序访问这些推文，从最新到最老，最适合的数据结构是list，借助LPUSH的将最新的推文ID放到其中，另外借助LRANGE可以实现分页功能。
+
+```text
+posts:1000 => a List of post ids - every new post is LPUSHed here.
+```
+
+设计用户认证，我们将用户cookie作为用户数据的一部分，在创建用户时使用一个随机、不可猜测的字符串作为auth的value，并且需要能够使用用户cookie来找到id的数据结构。
+
+为了验证用户身份，可以通过如下步骤：
+
+- 通过表单获取用户名和密码。
+- 验证username字段是否存在于users中。
+- 如果存在，我们可以获得用户ID。
+- 检查user:ID中password字段是否匹配，不匹配则返回错误消息。
+- 验证成功，取出user:ID中auth字段的值作为用户的cookie。
+
+```bash
+HSET user:1000 auth fea5e81ac8ca77622bed1c2132a021f9
+HSET auths fea5e81ac8ca77622bed1c2132a021f9 1000
 ```
