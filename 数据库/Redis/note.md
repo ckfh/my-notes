@@ -64,3 +64,16 @@ ZADD hackers 1957 "Sophie Wilson"
 ZADD hackers 1916 "Claude Shannon"
 ZRANGE hackers 0 -1
 ```
+
+```bash
+HSET user:1000 name "John Smith" # 新建一个map(user:1000)，并添加一个string field及其对应的string value
+HGETALL user:1000
+HMSET user:1001 name "Mary Jones" password "hidden" email "mjones@example.com" # 新建并添加多个field和value
+HGET user:1001 name
+
+HSET user:1000 visits 10
+HINCRBY user:1000 visits 1
+HINCRBY user:1000 visits 10
+HDEL user:1000 visits
+HINCRBY user:1000 visits 1
+```
