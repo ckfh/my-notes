@@ -465,6 +465,8 @@ public class AliyunStorageService implements StorageService {
 
 ## 加载配置文件
 
+> Spring Boot提供了@ConfigurationProperties注解，可以非常方便地把一段配置加载到一个Bean中。
+
 多次使用@Value引用同一个配置项不但麻烦，而且@Value使用字符串，缺少编译器检查，容易造成多处引用不一致。
 
 为了更好地管理配置，Spring Boot允许创建一个Bean，持有一组配置，并由Spring Boot自动注入。
@@ -513,6 +515,8 @@ public class StorageService {
 这样一来，引入storage.local的相关配置就很容易了，因为只需要注入StorageConfiguration这个Bean，这样可以由编译器检查类型，无需编写重复的@Value注解。
 
 ## 禁用自动配置并配置多数据源
+
+> 可以通过@EnableAutoConfiguration(exclude = {...})指定禁用的自动配置；可以通过@Import({...})导入自定义配置。
 
 Spring Boot大量使用自动配置和默认配置，极大地减少了代码，通常只需要加上几个注解，并按照默认规则设定一下必要的配置即可。例如，配置JDBC，默认情况下，只需要配置一个spring.datasource，Spring Boot就会自动创建出DataSource、JdbcTemplate、DataSourceTransactionManager，非常方便。
 
@@ -670,3 +674,130 @@ public class ApiController {
 @Operation可以对API进行描述，@Parameter可以对参数进行描述，它们的目的是用于生成API文档的描述信息。
 
 ## 访问Redis
+
+用户只要有过登录成功操作，那么用户数据就会被存放在Redis中，但是，在判断用户是否登录过即session是否存在用户记录，仍然是以用户ID作为第一判断条件。
+
+之前是将用户对象放到session中，现在将用户ID放到session，用户数据放到Redis中，假如用户数据很大，这样做便可以减轻服务器负担。
+
+```yml
+spring:
+  redis:
+    host: ${REDIS_HOST:localhost}
+    port: ${REDIS_PORT:6379}
+    password: ${REDIS_PASSWORD:}
+    ssl: ${REDIS_SSL:false}
+    database: ${REDIS_DATABASE:0}
+```
+
+```java
+// 通过RedisConfiguration来加载它：
+// 这样做的目的是可以进行类型检查以及方便注入配置：
+@ConfigurationProperties("spring.redis")
+public class RedisConfiguration {
+    private String host;
+    private int port;
+    private String password;
+    private int database;
+
+    // getters and setters...
+
+    // 再编写一个@Bean方法来创建RedisClient：
+    @Bean
+    RedisClient redisClient() {
+        RedisURI uri = RedisURI.Builder.redis(this.host, this.port)
+                .withPassword(this.password)
+                .withDatabase(this.database)
+                .build();
+        return RedisClient.create(uri);
+    }
+}
+// 用一个RedisService来封装所有的Redis操作：
+@Component
+public class RedisService {
+    @Autowired
+    RedisClient redisClient;
+    // 引入了Commons Pool的一个对象池，用于缓存Redis连接：
+    // 因为Lettuce本身是基于Netty的异步驱动，在异步访问时并不需要创建连接池，但基于Servlet模型的同步访问时，连接池是有必要的：
+    GenericObjectPool<StatefulRedisConnection<String, String>> redisConnectionPool;
+
+    @PostConstruct
+    public void init() {
+        // 初始化连接池：
+        GenericObjectPoolConfig<StatefulRedisConnection<String, String>> poolConfig = new GenericObjectPoolConfig<>();
+        poolConfig.setMaxTotal(20);
+        poolConfig.setMaxIdle(5);
+        poolConfig.setTestOnReturn(true);
+        poolConfig.setTestWhileIdle(true);
+        this.redisConnectionPool = ConnectionPoolSupport.createGenericObjectPool(() -> redisClient.connect(), poolConfig);
+    }
+
+    @PreDestroy
+    public void shutdown() {
+        // 关闭连接池：
+        this.redisConnectionPool.close();
+        this.redisClient.shutdown();
+    }
+}
+```
+
+下一步，是在RedisService中添加Redis访问方法。为了简化代码，我们仿照JdbcTemplate.execute(ConnectionCallback)方法，传入回调函数，可大幅减少样板代码。
+
+```java
+// 首先定义回调函数接口SyncCommandCallback：
+@FunctionalInterface
+public interface SyncCommandCallback<T> {
+    // 在此操作Redis:
+    T doInConnection(RedisCommands<String, String> commands);
+}
+// 编写executeSync方法，在该方法中，获取Redis连接，利用callback操作Redis，最后释放连接，并返回操作结果：
+public <T> T executeSync(SyncCommandCallback<T> callback) {
+    try (StatefulRedisConnection<String, String> connection = redisConnectionPool.borrowObject()) {
+        connection.setAutoFlushCommands(true);
+        RedisCommands<String, String> commands = connection.sync();
+        return callback.doInConnection(commands);
+    } catch (Exception e) {
+        logger.warn("executeSync redis failed.", e);
+        throw new RuntimeException(e);
+    }
+}
+// 针对常用操作把它封装一下，例如set和get命令：
+public String set(String key, String value) {
+    return executeSync(commands -> commands.set(key, value));
+}
+
+public String get(String key) {
+    return executeSync(commands -> commands.get(key));
+}
+// 类似的，hget和hset操作如下：
+public boolean hset(String key, String field, String value) {
+    return executeSync(commands -> commands.hset(key, field, value));
+}
+
+public String hget(String key, String field) {
+    return executeSync(commands -> commands.hget(key, field));
+}
+
+public Map<String, String> hgetall(String key) {
+    return executeSync(commands -> commands.hgetall(key));
+}
+```
+
+常用命令可以提供方法接口，如果要执行任意复杂的操作，就可以通过`executeSync(SyncCommandCallback<T>)`来完成。
+
+从Redis读写Java对象时，序列化和反序列化是应用程序的工作，代码使用JSON作为序列化方案，简单可靠。也可将相关序列化操作封装到RedisService中，这样可以提供更加通用的方法：
+
+```java
+public <T> T get(String key, Class<T> clazz) {
+    ...
+}
+
+public <T> T set(String key, T value) {
+    ...
+}
+```
+
+Spring Boot默认使用Lettuce作为Redis客户端，同步使用时，应通过连接池提高效率。
+
+## 集成Artemis
+
+## 集成RabbitMQ
