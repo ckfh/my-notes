@@ -800,4 +800,12 @@ Spring Boot默认使用Lettuce作为Redis客户端，同步使用时，应通过
 
 ## 集成Artemis
 
+在Spring Boot中使用Artemis作为JMS服务时，只需引入spring-boot-starter-artemis依赖，即可直接使用JMS。
+
 ## 集成RabbitMQ
+
+Spring Boot提供了AMQP的集成，默认使用RabbitMQ作为AMQP消息服务器。
+
+**使用RabbitMQ发送消息时，理解Exchange如何路由至一个或多个Queue至关重要**。
+
+## 集成Kafka
