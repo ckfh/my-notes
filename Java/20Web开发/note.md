@@ -1,15 +1,59 @@
-# 开发
+# 笔记
 
 ## Web基础
 
+今天我们访问网站，使用App时，都是基于Web这种Browser/Server模式，简称BS架构，它的特点是，**客户端只需要浏览器，应用程序的逻辑和数据都存储在服务器端**。浏览器只需要请求服务器，获取Web页面，并把Web页面展示给用户即可。
+
+浏览器发送的HTTP请求中比较常用的HTTP Header包括：
+
+- Host: 表示请求的主机名，因为一个服务器上可能运行着多个网站，因此，Host表示浏览器正在请求的域名；
+- User-Agent: 标识客户端本身，例如Chrome浏览器的标识类似`Mozilla/5.0 ... Chrome/79`，IE浏览器的标识类似`Mozilla/5.0 (Windows NT ...) like Gecko`；
+- Accept：表示浏览器能接收的资源类型，如`text/*`，`image/*`或者`*/*`表示所有；
+- Accept-Language：表示浏览器偏好的语言，服务器可以据此返回不同语言的网页；
+- Accept-Encoding：表示浏览器可以支持的压缩类型，例如gzip, deflate, br。
+
+常见的响应代码有：
+
+- 200 OK：表示成功；
+- 301 Moved Permanently：表示该URL已经永久重定向；
+- 302 Found：表示该URL需要临时重定向；
+- 304 Not Modified：表示该资源没有修改，客户端可以使用本地缓存的版本；
+- 400 Bad Request：表示客户端发送了一个错误的请求，例如参数无效；
+- 401 Unauthorized：表示客户端因为身份未验证而不允许访问该URL；
+- 403 Forbidden：表示服务器因为权限问题拒绝了客户端的请求；
+- 404 Not Found：表示客户端请求了一个不存在的资源；
+- 500 Internal Server Error：表示服务器处理时内部出错，例如因为无法连接数据库；
+- 503 Service Unavailable：表示服务器此刻暂时无法处理请求。
+
+其中2xx表示成功，3xx表示重定向，4xx表示客户端引发的错误，5xx表示服务器端引发的错误。
+
+服务器经常返回的HTTP Header包括：
+
+- Content-Type：表示该响应内容的类型，例如text/html，image/jpeg；
+- Content-Length：表示该响应内容的长度（字节数）；
+- Content-Encoding：表示该响应压缩算法，例如gzip；
+- Cache-Control：指示客户端应如何缓存，例如max-age=300表示可以最多缓存300秒。
+
+HTTP请求和响应都由HTTP Header和HTTP Body构成，**其中HTTP Header每行都以\r\n结束。如果遇到两个连续的\r\n，那么后面就是HTTP Body**。
+
+浏览器读取HTTP Body，并根据Header信息中指示的`Content-Type`、`Content-Encoding`等解压后显示网页、图像或其他内容。
+
+通常浏览器获取的第一个资源是HTML网页，在网页中，如果嵌入了JavaScript、CSS、图片、视频等其他资源，浏览器会根据资源的URL**再次**向服务器请求对应的资源。
+
+HTTP目前有多个版本，1.0是早期版本，浏览器每次建立TCP连接后，只发送一个HTTP请求并接收一个HTTP响应，然后就关闭TCP连接。由于创建TCP连接本身就需要消耗一定的时间，因此，HTTP 1.1允许浏览器和服务器在同一个TCP连接上反复发送、接收多个HTTP请求和响应，这样就大大提高了传输效率。
+
+我们注意到HTTP协议是一个请求-响应协议，它总是发送一个请求，然后接收一个响应。能不能一次性发送多个请求，然后再接收多个响应呢？HTTP 2.0可以支持浏览器同时发出多个请求，但每个请求需要唯一标识，服务器可以不按请求的顺序返回多个响应，由浏览器自己把收到的响应和请求对应起来。可见，HTTP 2.0进一步提高了传输效率，因为浏览器发出一个请求后，不必等待响应，就可以继续发下一个请求。
+
+HTTP 3.0为了进一步提高速度，将抛弃TCP协议，改为使用无需创建连接的UDP协议，目前HTTP 3.0仍然处于实验阶段。
+
 ```Java
+// 一个简单的HTTP服务器，本质就是一个能够处理TCP连接的应用程序
 public class HTTPServer {
     public static void main(String[] args) throws IOException {
-        // 一个简单的HTTP服务器，本质就是一个TCP服务器
         ServerSocket ss = new ServerSocket(8080); // 监听8080端口
         System.out.println("server is running...");
         for (; ; ) {
-            Socket sock = ss.accept(); // 接收到一个socket对象，表示有客户端发起链接，通过该对象进行通信
+            Socket sock = ss.accept(); // 接收到一个socket对象，表示有客户端发起连接，通过该对象进行通信
             System.out.println("connected from " + sock.getRemoteSocketAddress());
             Thread t = new HTTPHandler(sock); // 每接收一个socket对象，就启用一个线程进行处理
             t.start();
@@ -43,52 +87,71 @@ class HTTPHandler extends Thread {
 
     private void handle(InputStream input, OutputStream output) throws IOException {
         System.out.println("Process new http request...");
-        // 将字节流转换为缓冲字符流，方便进行处理
+        // 将字节流转换为缓冲字符流，可以调用readLine()方法每次读取一行内容
         BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(output, StandardCharsets.UTF_8));
         BufferedReader reader = new BufferedReader(new InputStreamReader(input, StandardCharsets.UTF_8));
-        boolean requestOk = false;
-        String first = reader.readLine(); // 读取请求消息的第一行即请求行
+        int requestFlag = -1;
+        // 读取HTTP请求
+        String first = reader.readLine(); // 读取HTTP请求的第一行即请求行
         if (first.startsWith("GET / HTTP/1.")) {
             // GET方法访问，URI即访问目标为路径/，HTTP版本为1.0或1.1
-            requestOk = true;
+            requestOk = 1;
+        }
+        if (first.startsWith("GET /favicon.ico HTTP/1.")) {
+            requestFlag = 2;
         }
         for (; ; ) {
-            String header = reader.readLine(); // 读取请求消息中的消息头，一直读取到空行为止
+            String header = reader.readLine(); // 循环读取HTTP请求中的HTTP header，一直读取到空行为止
             if (header.isEmpty())
                 break;
             System.out.println(header);
         }
-        // 根据请求行确定响应消息
-        System.out.println(requestOk ? "Response OK" : "Response Error");
-        if (!requestOk) {
-            writer.write("404 Not Found\r\n"); // 状态行
-            writer.write("Content-Length: 0\r\n"); // 消息头
-            writer.write("\r\n"); // 空行之后是消息体，无内容
-            writer.flush();
-        } else {
-            String data = "<html><body><h1>Hello, World!</h1></body></html>"; // 消息体内容
-            int length = data.getBytes(StandardCharsets.UTF_8).length;
-            writer.write("HTTP/1.0 200 OK\r\n"); // 状态行，HTTP版本/状态码/响应短语
-            writer.write("Connection: close\r\n"); // 消息头一
-            writer.write("Content-Type: text/html\r\n"); // 消息头二
-            writer.write("Content-Length: " + length + "\r\n"); // 消息头三
-            writer.write("\r\n"); // 空行
-            writer.write(data); // 消息体
-            writer.flush();
+        System.out.println(requestFlag > 0 ? "Response OK" : "Response Error");
+        // 根据请求行确定HTTP响应
+        switch (requestFlag) {
+            case 1:
+                String data = "<html><body><h1>Hello, world!</h1></body></html>"; // 消息体内容
+                int length = data.getBytes(StandardCharsets.UTF_8).length;
+                writer.write("HTTP/1.1 200 OK\r\n"); // 状态行：HTTP版本/状态码/响应短语
+                writer.write("Connection: close\r\n"); // 消息头一
+                writer.write("Content-Type: text/html\r\n"); // 消息头二
+                writer.write("Content-Length: " + length + "\r\n"); // 消息头三
+                writer.write("\r\n"); // 空行
+                writer.write(data); // 消息体
+                writer.flush();
+                break;
+            case 2:
+                byte[] b = Server.class.getResourceAsStream("/favicon.png").readAllBytes();
+                writer.write("HTTP/1.1 200 OK\r\n");
+                writer.write("Connection: close\r\n");
+                writer.write("Content-Type: image/x-icon\r\n");
+                writer.write("Content-Length: " + b.length + "\r\n");
+                writer.write("\r\n");
+                writer.flush();
+                output.write(b); // 为了写入二进制数据切换为字节流对象
+                output.flush();
+                break;
+            default:
+                writer.write("HTTP/1.1 404 Not Found\r\n");
+                writer.write("Content-Length: 0\r\n");
+                writer.write("\r\n");
+                writer.flush();
+                break;
         }
     }
 }
 ```
 
-<img src="./image/页面.jpg">
-
 ## Servlet入门
 
-在JavaEE平台上，处理TCP连接，解析HTTP协议这些底层工作统统扔给现成的Web服务器去做，我们只需要把自己的应用程序跑在Web服务器上。为了实现这一目的，JavaEE提供了Servlet API，我们使用Servlet API编写自己的Servlet来处理HTTP请求，Web服务器实现Servlet API接口，实现底层功能。  
+在JavaEE平台上，处理TCP连接，解析HTTP协议这些底层工作统统扔给现成的Web服务器去做，我们只需要把自己的应用程序跑在Web服务器上。**为了实现这一目的，JavaEE提供了Servlet API，我们使用Servlet API编写自己的Servlet来处理HTTP请求，Web服务器实现Servlet API接口，实现底层功能**。
 
 <img src="./image/过程.jpg">
 
-编写Web应用程序就是编写Servlet处理HTTP请求；Servlet API提供了HttpServletRequest和HttpServletResponse两个高级接口来封装HTTP请求和响应；Web应用程序必须按**固定结构**组织并打包为.war文件；需要启动Web服务器来加载我们的war包来运行Servlet。
+- 编写Web应用程序就是编写Servlet处理HTTP请求；
+- Servlet API提供了HttpServletRequest和HttpServletResponse两个高级接口来封装HTTP请求和响应；
+- Web应用程序必须按**固定结构**组织并打包为`.war(Java Web Application Archive)`文件；
+- 需要启动Web服务器来加载我们的war包来运行Servlet。
 
 一个Servlet总是继承自HttpServlet，然后覆写doGet()或doPost()方法。注意到doGet()方法传入了HttpServletRequest和HttpServletResponse两个对象，分别代表HTTP请求和响应。我们使用Servlet API时，并不直接与底层TCP交互，也不需要解析HTTP协议，因为HttpServletRequest和HttpServletResponse就已经封装好了请求和响应。以发送响应为例，我们只需要设置正确的响应类型，然后获取PrintWriter，写入响应即可。
 
@@ -107,34 +170,57 @@ public class HelloServlet extends HttpServlet {
 }
 ```
 
-<img src="./image/servlet页面.jpg">
+```xml
+<packaging>war</packaging>
+...
+<dependency>
+    <groupId>javax.servlet</groupId>
+    <artifactId>javax.servlet-api</artifactId>
+    <version>4.0.0</version>
+    <!-- 表示编译时使用，但不会打包到.war文件中，因为运行期Web服务器本身已经提供了Servlet API相关的jar包。 -->
+    <scope>provided</scope>
+</dependency>
+...
+<build>
+    <finalName>hello</finalName>
+</build>
+```
 
-**为啥路径是/hello/而不是/。因为一个Web服务器允许同时运行多个Web App，而我们的Web App叫hello，因此，第一级目录/hello表示Web App的名字，后面的/才是我们在HelloServlet中映射的路径**。
+**为什么路径是/hello/而不是/。因为一个Web服务器允许同时运行多个Web App，而我们的Web App叫hello，因此，第一级目录/hello表示Web App的名字，后面的/才是我们在HelloServlet中映射的路径**。
 
 类似Tomcat这样的服务器也是Java编写的，启动Tomcat服务器实际上是启动Java虚拟机，执行Tomcat的main()方法，然后由Tomcat负责加载我们的.war文件，并创建一个HelloServlet实例，最后以多线程的模式来处理HTTP请求。如果Tomcat服务器收到的请求路径是/（假定部署文件为ROOT.war），就转发到HelloServlet并传入HttpServletRequest和HttpServletResponse两个对象。
 
 因为我们编写的Servlet并不是直接运行，而是由Web服务器加载后创建实例运行，所以，类似Tomcat这样的Web服务器也称为Servlet容器。
 
-在Servlet容器中运行的Servlet具有如下特点：无法在代码中直接通过new创建Servlet实例，必须由Servlet容器自动创建Servlet实例；Servlet容器只会给每个Servlet类创建**唯一实例**；Servlet容器会使用**多线程**执行doGet()或doPost()方法。
+在Servlet容器中运行的Servlet具有如下特点：
 
-因此，在Servlet中定义的**实例变量**会被多个线程同时访问，要注意线程安全；**HttpServletRequest和HttpServletResponse实例是由Servlet容器传入的局部变量，它们只能被当前线程访问，不存在多个线程访问的问题**；在doGet()或doPost()方法中，如果使用了ThreadLocal，但没有清理，那么它的状态很可能会影响到下次的某个请求，因为Servlet容器很可能用线程池实现线程复用。
+- 无法在代码中直接通过new创建Servlet实例，必须由Servlet容器自动创建Servlet实例；
+- Servlet容器只会给每个Servlet类创建**唯一实例**；
+- Servlet容器会使用**多线程**执行doGet()或doPost()方法。
+- 在Servlet中定义的**实例变量**会被多个线程同时访问，要注意线程安全；
+- **HttpServletRequest和HttpServletResponse实例是由Servlet容器传入的局部变量，它们只能被当前线程访问，不存在多个线程访问的问题**；
+- 在doGet()或doPost()方法中，如果使用了ThreadLocal，但没有清理，那么它的状态很可能会影响到下次的某个请求，因为Servlet容器很可能用线程池实现线程复用。
 
-正确编写Servlet，要清晰理解Java的多线程模型，需要同步访问的必须同步。
+因此，正确编写Servlet，要清晰理解Java的多线程模型，**需要同步访问的必须同步**。
 
-### 小结
+项目流程：
 
-> 使用idea新建一个maven web项目，新建后删除webapp文件夹中的index.jsp文件，在WEB-INF目录中放置web.xml文件，在webapp同级目录中新建java和resources文件夹。  
-> 引入servlet-api依赖，注意api版本和之后部署的tomcat版本需要对应，例如tomcat9支持的是servlet 4.0。  
-> 编写servlet程序映射指定路径，在doGet()或doPost()方法中进行请求和响应的处理。  
-> 使用mvn clean package将项目打包为war包，放置在tomcat安装目录中的webapps文件夹中，切换到bin目录，使用startup.bat启动tomcat服务器，使用shutdown.bat关闭tomcat服务器。
+- 使用IDEA新建一个maven web项目，新建后删除webapp文件夹中的index.jsp文件，在WEB-INF目录中放置web.xml文件，在webapp同级目录中新建java和resources文件夹。  
+- 引入servlet-api依赖，注意api版本和之后部署的tomcat版本需要对应，例如tomcat9支持的是servlet 4.0。  
+- 编写servlet程序映射指定路径，在doGet()或doPost()方法中进行请求和响应的处理。  
+- 使用mvn clean package将项目打包为war包，放置在tomcat安装目录中的webapps文件夹中，切换到bin目录，使用startup.bat启动tomcat服务器，使用shutdown.bat关闭tomcat服务器。
 
 ## Servlet开发
 
-Tomcat实际上也是一个Java程序，我们看看Tomcat的启动流程：启动JVM并执行Tomcat的main()方法；加载war并初始化Servlet；正常服务。
+Tomcat实际上也是一个Java程序，我们看看Tomcat的启动流程：
+
+- 启动JVM并执行Tomcat的main()方法；
+- 加载war并初始化Servlet；
+- 正常服务。
 
 启动Tomcat无非就是设置好classpath并执行Tomcat某个jar包的main()方法，我们完全可以把Tomcat的jar包全部引入进来，然后自己编写一个main()方法，先启动Tomcat，然后让它加载我们的webapp就行。
 
-引入依赖tomcat-embed-core和tomcat-embed-jasper，不必引入Servlet API，因为引入Tomcat依赖后自动引入了Servlet API。
+引入依赖`tomcat-embed-core`和`tomcat-embed-jasper`，不必引入Servlet API，因为引入Tomcat依赖后自动引入了Servlet API。其中，`<packaging>`类型仍然为war。
 
 ```Java
 public class Main {
@@ -155,11 +241,7 @@ public class Main {
 }
 ```
 
-直接运行main()方法，即可启动嵌入式Tomcat服务器，然后，通过预设的tomcat.addWebapp("", new File("src/main/webapp")，Tomcat会自动加载当前工程作为**根webapp**。
-
-通过main()方法启动Tomcat服务器并加载我们自己的webapp有如下好处：启动简单，无需下载Tomcat或安装任何IDE插件；调试方便，可在IDE中使用断点调试；使用Maven创建war包后，也可以正常部署到独立的Tomcat服务器中。
-
-开发Servlet时，推荐使用main()方法启动嵌入式Tomcat服务器并加载当前工程的webapp，便于开发调试，且不影响打包部署，能极大地提升开发效率。
+直接运行main()方法，即可启动嵌入式Tomcat服务器，然后，通过预设的`tomcat.addWebapp("", new File("src/main/webapp")`，Tomcat会自动加载当前工程作为**ROOT Web App**。
 
 <img src="./image/方案.jpg">
 

@@ -1,4 +1,19 @@
-# 记录我自己踩过又老是忘记的坑
+# 记录
+
+## TOMCAT命令行乱码
+
+打开conf目录里的context文件，将所有的`UTF-8`替换为`GBK`保存。
+
+## getResourceAsStream()方法探究
+
+```java
+// classes目录根路径
+ClassLoader.getResourceAsStream("filename")
+// classes目录中和.class文件相同路径
+Class.getResourceAsStream("filename")
+// classes目录根路径
+Class.getResourceAsStream("/filename")
+```
 
 ## 转义与不转义
 
