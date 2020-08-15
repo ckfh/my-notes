@@ -2,6 +2,8 @@
 
 ## Web基础
 
+### HTTP协议
+
 今天我们访问网站，使用App时，都是基于Web这种Browser/Server模式，简称BS架构，它的特点是，**客户端只需要浏览器，应用程序的逻辑和数据都存储在服务器端**。浏览器只需要请求服务器，获取Web页面，并把Web页面展示给用户即可。
 
 浏览器发送的HTTP请求中比较常用的HTTP Header包括：
@@ -45,6 +47,8 @@ HTTP目前有多个版本，1.0是早期版本，浏览器每次建立TCP连接�
 我们注意到HTTP协议是一个请求-响应协议，它总是发送一个请求，然后接收一个响应。能不能一次性发送多个请求，然后再接收多个响应呢？HTTP 2.0可以支持浏览器同时发出多个请求，但每个请求需要唯一标识，服务器可以不按请求的顺序返回多个响应，由浏览器自己把收到的响应和请求对应起来。可见，HTTP 2.0进一步提高了传输效率，因为浏览器发出一个请求后，不必等待响应，就可以继续发下一个请求。
 
 HTTP 3.0为了进一步提高速度，将抛弃TCP协议，改为使用无需创建连接的UDP协议，目前HTTP 3.0仍然处于实验阶段。
+
+### 编写HTTP Server
 
 ```Java
 // 一个简单的HTTP服务器，本质就是一个能够处理TCP连接的应用程序
@@ -247,25 +251,72 @@ public class Main {
 
 ## Servlet进阶
 
-早期的Servlet需要在web.xml中配置映射路径，但最新Servlet版本只需要通过注解就可以完成映射。
+**早期的Servlet需要在web.xml中配置映射路径，但最新Servlet版本只需要通过注解就可以完成映射**。
 
-一个Webapp中的多个Servlet依靠路径映射来处理不同的请求；
+浏览器发出的HTTP请求总是由Web Server先接收，然后，根据Servlet配置的映射，不同的路径转发到不同的Servlet，这种根据路径转发的功能我们一般称为Dispatch。映射到/的IndexServlet比较特殊，它实际上会接收所有未匹配的路径，相当于/*。
 
-**映射为/的Servlet可处理所有“未匹配”的请求**；
+### HttpServletRequest
 
-如何处理请求取决于Servlet覆写的对应方法；
+HttpServletRequest封装了一个HTTP请求，它实际上是从ServletRequest继承而来。最早设计Servlet时，设计者希望Servlet不仅能处理HTTP，也能处理类似SMTP等其他协议，因此，单独抽出了ServletRequest接口，但实际上除了HTTP外，并没有其他协议会用Servlet处理，所以这是一个过度设计。
 
-Web服务器通过多线程处理HTTP请求，**一个Servlet的处理方法可以由多线程并发执行**。
+通过HttpServletRequest提供的接口方法可以拿到HTTP请求的几乎全部信息，常用的方法有：
 
-一个Servlet类在服务器中只有一个实例，但对于每个HTTP请求，Web服务器会使用多线程执行请求。因此，一个Servlet的doGet()、doPost()等处理请求的方法是多线程并发执行的。**如果Servlet中定义了字段**，要注意多线程并发访问的问题。
+- getMethod()：返回请求方法，例如，"GET"，"POST"；
+- getRequestURI()：返回请求路径，但不包括请求参数，例如，"/hello"；
+- getQueryString()：返回请求参数，例如，"name=Bob&a=1&b=2"；
+- getParameter(name)：返回请求参数，**GET请求从URL读取参数，POST请求从Body中读取参数**；
+- getContentType()：获取请求Body的类型，例如，"application/x-www-form-urlencoded"；
+- getContextPath()：获取当前Webapp挂载的路径，对于ROOT来说，总是返回空字符串""；
+- getCookies()：返回请求携带的所有Cookie；
+- getHeader(name)：获取指定的Header，对Header名称不区分大小写；
+- getHeaderNames()：返回所有Header名称；
+- getInputStream()：如果该请求带有HTTP Body，该方法将打开一个输入流用于读取Body；
+- getReader()：和getInputStream()类似，但打开的是Reader；
+- getRemoteAddr()：返回客户端的IP地址；
+- getScheme()：返回协议类型，例如，"http"，"https"；
+
+此外，HttpServletRequest还有两个方法：setAttribute()和getAttribute()，可以给当前HttpServletRequest对象附加多个Key-Value，相当于把HttpServletRequest当作一个`Map<String, Object>`使用。
+
+### HttpServletResponse
+
+HttpServletResponse封装了一个HTTP响应。由于HTTP响应必须先发送Header，再发送Body，所以，操作HttpServletResponse对象时，**必须先调用设置Header的方法，最后调用发送Body的方法**。常用的设置Header的方法有：
+
+- setStatus(sc)：设置响应代码，默认是200；
+- setContentType(type)：设置Body的类型，例如，"text/html"；
+- setCharacterEncoding(charset)：设置字符编码，例如，"UTF-8"；
+- setHeader(name, value)：设置一个Header的值；
+- addCookie(cookie)：给响应添加一个Cookie；
+- addHeader(name, value)：给响应添加一个Header，因为HTTP协议允许有多个相同的Header；
+
+写入响应时，需要通过getOutputStream()获取写入流，或者通过getWriter()获取字符流，二者只能获取其中一个。
+
+写入响应前，无需设置setContentLength()，因为底层服务器会根据写入的字节数自动设置，如果写入的数据量很小，实际上会先写入缓冲区，如果写入的数据量很大，服务器会自动采用Chunked编码让浏览器能识别数据结束符而不需要设置Content-Length头。
+
+但是，写入完毕后调用flush()却是必须的，因为大部分Web服务器都基于HTTP/1.1协议，会复用TCP连接。如果没有调用flush()，将导致缓冲区的内容无法及时发送到客户端。此外，写入完毕后千万不要调用close()，原因同样是因为会复用TCP连接，如果关闭写入流，将关闭TCP连接，使得Web服务器无法复用此TCP连接。
+
+### Servlet多线程模型
+
+**一个Servlet类在服务器中只有一个实例，但对于每个HTTP请求，Web服务器会使用多线程执行请求。因此，一个Servlet的doGet()、doPost()等处理请求的方法是多线程并发执行的。如果Servlet中定义了字段，要注意多线程并发访问的问题（类实例只有一个，但是实例方法会被多线程并发执行）**。
+
+```java
+public class HelloServlet extends HttpServlet {
+    // 如果map一开始就被初始化并且仅用于读操作，可以不使用并发包中提供的实现类：
+    private Map<String, String> map = new ConcurrentHashMap<>();
+
+    protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
+        // 注意读写map字段是多线程并发的:
+        this.map.put(key, value);
+    }
+}
+```
 
 **对于每个请求，Web服务器会创建唯一的HttpServletRequest和HttpServletResponse实例，因此，HttpServletRequest和HttpServletResponse实例只有在当前处理线程中有效，它们总是局部变量，不存在多线程共享的问题**。
 
-### 重定向与转发
+## 重定向与转发
 
-#### Redirect
+### Redirect
 
-重定向是指当浏览器请求一个URL时，服务器返回一个重定向指令，告诉浏览器地址已经变了，麻烦使用新的URL再重新发送新请求。
+重定向是指当浏览器请求一个URL时，服务器返回一个重定向指令，告诉浏览器地址已经变了，麻烦**使用新的URL**再重新发送新请求。
 
 ```Java
 @WebServlet(urlPatterns = "/hi")
@@ -299,7 +350,12 @@ resp.setStatus(HttpServletResponse.SC_MOVED_PERMANENTLY);
 resp.setHeader("Location", redirectToUrl);
 ```
 
-当使用301永久重定向时的几个注意点：1.第一次访问的路径会被缓存，再次访问时控制台会显示该重定向来自缓存。2.启用301永久重定向时的所有访问路径都会被缓存，如果之后切换为302临时重定向，此时被缓存的路径仍然以301响应码进行返回，新的路径则以302响应码进行返回。3.如果想要禁止路径缓存，可以在控制台中选择disable cache。
+当使用301永久重定向时的几个注意点：
+
+  1. 第一次访问的路径会被缓存，再次访问时控制台会显示该重定向来自硬盘缓存。
+  2. 启用301永久重定向时的所有请求访问过的路径都会被缓存，如果之后切换为302临时重定向，此时被缓存的路径仍然以301响应码进行返回，新的路径则以302响应码进行返回。
+  3. 如果想要禁止缓存，可以在控制台中选择disable cache。
+  4. 缓存的是完整路径，即`/hi?name=Bob`和`/hi?name=Cat`会被分别缓存。
 
 <img src="./image/永久重定向.jpg">
 
@@ -307,9 +363,9 @@ resp.setHeader("Location", redirectToUrl);
 
 **重定向的目的是当Web应用升级后，如果请求路径发生了变化，可以将原来的路径重定向到新路径，从而避免浏览器请求原路径找不到资源。**
 
-#### Forward
+### Forward
 
-Forward是指内部转发。当一个Servlet处理请求的时候，它可以决定自己不继续处理，而是转发给另一个Servlet处理。
+Forward是指**内部转发**。当一个Servlet处理请求的时候，它可以决定自己不继续处理，而是转发给另一个Servlet处理。
 
 **转发和重定向的区别在于，转发是在Web服务器内部完成的，对浏览器来说，它只发出了一个HTTP请求。**
 
@@ -328,70 +384,76 @@ public class ForwardServlet extends HttpServlet {
 
 注意到使用转发的时候，浏览器的地址栏路径仍然是/morning，浏览器并不知道该请求在Web服务器内部实际上做了一次转发。
 
-### 使用Session和Cookie
+## 使用Session（机制/服务端）和Cookie（形式/客户端）
 
-在Web应用程序中，我们经常要跟踪用户身份。当一个用户登录成功后，如果他继续访问其它页面，Web程序如何才能识别出该用户身份。
+因为HTTP协议是一个无状态协议，即Web应用程序无法区分收到的两个HTTP请求是否是**同一个浏览器**发出的。为了跟踪用户状态，服务器可以**向浏览器分配一个唯一ID**，并以**Cookie的形式**发送到浏览器，浏览器在后续访问时总是附带此Cookie，这样，服务器就可以识别用户身份。
 
-因为HTTP协议是一个无状态协议，即Web应用程序无法区分收到的两个HTTP请求是否是**同一个浏览器**发出的。为了跟踪用户状态，服务器可以向浏览器分配一个唯一ID，并以Cookie的**形式**发送到浏览器，浏览器在后续访问时总是附带此Cookie，这样，服务器就可以识别用户身份。
+**同一个浏览器指的是浏览器类型，即会为chrome浏览器和edge浏览器分配两个ID，但不会为chrome和chrome无痕模式分配两个ID，即无痕模式不算是一个新的类型**。
 
-会向本地的Chrome和Edge分配两个ID，但不会给Chrome和Chrome无痕模式分配两个ID，即无痕模式不能当作是一个新的客户端。
+### Session
 
-我们把这种基于唯一ID识别用户身份的**机制**称为Session。每个用户第一次访问服务器后，会自动获得一个Session ID。如果用户在一段时间内没有访问服务器，那么Session会自动失效，下次即使带着上次分配的Session ID访问，服务器也认为这是一个新用户，会分配新的Session ID。
+我们把这种**基于唯一ID识别用户身份的机制**称为Session。每个用户第一次访问服务器后，会自动获得一个Session ID。如果用户在一段时间内没有访问服务器，那么Session会自动失效，下次即使带着上次分配的Session ID访问，服务器也认为这是一个新用户，会分配新的Session ID。
 
 stackoverflow上有关session和cookie关系的回答：[参考链接](https://stackoverflow.com/questions/32563236/relation-between-sessions-and-cookies)
 
-对于Web应用程序来说，我们总是通过HttpSession这个高级接口访问当前Session。如果要深入理解Session原理，**可以认为Web服务器在内存中自动维护了一个ID到HttpSession的映射表**。
+JavaEE的Servlet机制内建了对Session的支持。我们以登录为例，当一个用户登录成功后，我们就可以把这个用户的名字放入一个HttpSession对象，以便后续访问其他页面的时候，能直接从HttpSession取出用户名：
+
+```java
+// 判断用户登录成功后，立刻将用户名放入当前HttpSession中：
+HttpSession session = req.getSession();
+session.setAttribute("user", name);
+// 从HttpSession获取当前用户名:
+String user = (String) req.getSession().getAttribute("user");
+// 从HttpSession移除用户名:
+req.getSession().removeAttribute("user");
+```
+
+对于Web应用程序来说，我们总是通过HttpSession这个高级接口访问当前Session。如果要深入理解Session原理，可以认为Web服务器在**内存**中自动维护了一个ID到HttpSession的**映射表**。
+
+**因此，当程序重启，操作系统回收之前被程序占用的内存并重新分配运行内存，在之前Session当中所存放的内容实际上已经被清理了。如果我们借助Session来存放用户的登录状态，那么在保持登录状态的情况下重启程序并刷新页面，此时会跳转到为未登录状态所准备的页面当中**。
 
 <img src="./image/sessions.jpg">
 
 而服务器识别Session的关键就是依靠一个名为JSESSIONID的Cookie。**在Servlet中第一次调用req.getSession()时**，Servlet容器自动创建一个Session ID，然后通过一个名为JSESSIONID的Cookie发送给浏览器。
 
-注意事项：**JSESSIONID是由Servlet容器自动创建的**，目的是维护一个浏览器会话，它和我们的登录逻辑没有关系；**登录和登出的业务逻辑是我们自己根据HttpSession是否存在一个"user"的Key判断的，登出后，Session ID并不会改变**；即使没有登录功能，仍然可以使用HttpSession追踪用户，例如，放入一些用户配置信息等。
+注意事项：
 
-容器在其它情况下是否会创建JSESSIONID不是我们能够控制的，例如当你将请求和响应转发至JSP文件时，服务器同样会创建一个JSESSIONID发送给客户端。
+- **JSESSIONID是由Servlet容器自动创建的**，目的是维护一个浏览器会话，它和我们的登录逻辑没有关系；
+- **登录和登出的业务逻辑是我们自己根据HttpSession是否存在一个"user"的Key判断的，登出后，Session ID并不会改变**；
+- 即使没有登录功能，仍然可以使用HttpSession追踪用户，例如，放入一些用户配置信息等。
 
-除了使用Cookie机制可以实现Session外，还可以通过隐藏表单、URL末尾附加ID来追踪Session。这些机制很少使用，最常用的Session机制仍然是Cookie。
+~~容器在其它情况下是否会创建JSESSIONID不是我们能够控制的，例如当你将请求和响应转发至JSP文件时~~，**这是因为在JSP页面当中内置了session变量供我们直接使用，而session变量恰恰就是通过getSession()方法获得的，可以查看JSP文件被容器编译后的Java文件的源码找到创建语句**，服务器同样会创建一个JSESSIONID发送给客户端。
+
+除了使用Cookie机制可以实现Session外，还可以通过隐藏表单、URL末尾附加ID来追踪Session。这些机制很少使用，最常用的Session机制仍然是Cookie。**因此session机制和cookie实际上两者并没有任何联系，只是session机制可以借助cookie来实现，即使没有cookie，也可以通过其它形式来追踪session**。
 
 使用Session时，由于服务器把所有用户的Session都存储在内存中，如果遇到内存不足的情况，就需要把部分不活动的Session序列化到磁盘上，这会大大降低服务器的运行效率，因此，放入Session的对象要小，通常我们在value放入一个简单的User对象就足够了。
-
-```Java
-public class User {
-    public long id; // 唯一标识
-    public String email;
-    public String name;
-}
-```
 
 **使用Session机制，会使得Web Server的集群很难扩展，因此，Session适用于中小型Web应用程序。对于大型Web应用程序来说，通常需要避免使用Session机制**。
 
 一些使用总结：
 
-  1. 在servlet中**第一次**调用了req.getSession()时，会创建一个HttpSession对象至sessions当中，用一个sessionID映射该对象并以一个名为JSESSIONID的cookie发送给浏览器进行存储。  
-  2. 有几个不同的浏览器发送请求至该服务器就会创建几个HttpSession对象，浏览器存储过cookie之后**再次访问相同的域名时**每次请求消息的消息头都会携带该cookie直至过期或被替换。  
-  3. 此后在servlet中多次调用req.getSession()时便会根据这个名为JSESSIONID的cookie到sessions中找到对应的HttpSession对象，于是开发者可以基于这个对象进行业务逻辑的编写。  
-  4. 服务器重启之后所有的会话对象都会消失，sessionID是由容器创建的。  
+  1. 在servlet中**第一次**调用了req.getSession()时，会创建一个HttpSession对象至sessions当中，用一个sessionID映射该对象并以一个名为JSESSIONID的cookie发送给浏览器进行存储。
+  2. 有几个不同的浏览器发送请求至该服务器就会创建几个HttpSession对象，浏览器存储过cookie之后**再次访问相同的域名时**每次请求消息的消息头都会携带该cookie直至**过期或被替换**。
+  3. 此后在servlet中多次调用req.getSession()时便会根据这个名为JSESSIONID的cookie到sessions中找到对应的HttpSession对象，于是开发者可以基于这个对象进行业务逻辑的编写。
+  4. 服务器重启之后所有的会话对象都会消失，此时访问相同的域名会被响应一个新的JSESSIONID，sessionID是由容器创建的。
+
+### Cookie
 
 实际上，Servlet提供的HttpSession本质上就是通过一个名为JSESSIONID的Cookie来跟踪用户会话的。除了这个名称外，其它名称的Cookie我们可以任意使用。
 
 ```Java
 @WebServlet(urlPatterns = "/pref")
 public class LanguageServlet extends HttpServlet {
-    private final Set<String> LANGUAGES;
-
-    public LanguageServlet() {
-        this.LANGUAGES = new CopyOnWriteArraySet<>();
-        this.LANGUAGES.add("en");
-        this.LANGUAGES.add("zh");
-    }
+    private static final Set<String> LANGUAGES = Set.of("en", "zh");
     // 当客户端访问/pref?lang=xx路径时，根据参数设置一个cookie记录用户选择的语言
     @Override
     protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
         String lang = req.getParameter("lang");
-        if (this.LANGUAGES.contains(lang)) {
+        if (LANGUAGES.contains(lang)) {
+            // 创建一个新的cookie
             Cookie cookie = new Cookie("lang", lang);
             // 设置生效范围
             cookie.setPath("/");
-            // 设置有效日期
             cookie.setMaxAge(8640000);
             // 添加到响应当中
             resp.addCookie(cookie);
@@ -405,13 +467,11 @@ public class LanguageServlet extends HttpServlet {
 
 <img src="./image/携带自定义cookie.jpg">
 
-创建一个新Cookie时，除了指定名称和值以外，通常需要设置setPath("/")，浏览器根据此前缀决定是否发送Cookie。如果一个Cookie调用了setPath("/user/")，那么浏览器只有在请求以/user/开头的路径时才会附加此Cookie。通过setMaxAge()设置Cookie的有效期，单位为秒，最后通过resp.addCookie()把它添加到响应。
-
-如果访问的是https网页，还需要调用setSecure(true)，否则浏览器不会发送该Cookie。
+创建一个新Cookie时，除了指定名称和值以外，通常需要设置setPath("/")，浏览器根据此前缀决定是否发送Cookie。如果一个Cookie调用了setPath("/user/")，那么浏览器只有在请求以/user/开头的路径时才会附加此Cookie。通过setMaxAge()设置Cookie的有效期，单位为秒，最后通过resp.addCookie()把它添加到响应。如果访问的是https网页，还需要调用setSecure(true)，否则浏览器不会发送该Cookie。
 
 务必注意：**浏览器在请求某个URL时，是否携带指定的Cookie，取决于Cookie是否满足以下所有要求：URL前缀是设置Cookie时的Path；Cookie在有效期内；Cookie设置了secure时必须以https访问**。
 
-读取Cookie主要依靠遍历HttpServletRequest附带的所有Cookie。
+读取Cookie主要依靠遍历HttpServletRequest附带的所有Cookie：
 
 ```Java
 private String parseLanguageFromCookie(HttpServletRequest req) {
@@ -430,6 +490,10 @@ private String parseLanguageFromCookie(HttpServletRequest req) {
 }
 ```
 
+- Servlet容器提供了Session机制以跟踪用户；
+- 默认的Session机制是以Cookie形式实现的，Cookie名称为JSESSIONID；
+- 通过读写Cookie可以在客户端设置用户偏好等。
+
 ## JSP开发
 
 JSP是Java Server Pages的缩写，它的文件必须放到/src/main/webapp下，文件名必须以.jsp结尾，整个文件与HTML并无太大区别，但需要插入变量，或者动态输出的地方，使用特殊指令<% ... %>。
@@ -437,6 +501,7 @@ JSP是Java Server Pages的缩写，它的文件必须放到/src/main/webapp下�
 整个JSP的内容实际上是一个HTML，但是稍有不同：包含在<%--和--%>之间的是JSP的注释，它们会被完全忽略；包含在<%和%>之间的是Java代码，可以编写任意Java代码；如果使用<%= xxx %>则可以快捷输出一个变量的值。
 
 JSP页面内置了几个变量：out：表示HttpServletResponse的PrintWriter；session：表示当前HttpSession对象；request：表示HttpServletRequest对象。这几个变量可以直接使用。
+
 访问JSP页面时，可以直接指定完整路径进行访问。
 
 JSP和Servlet有什么区别。其实它们没有任何区别，因为JSP在执行前首先被编译成一个Servlet。在Tomcat的临时目录下，可以找到一个hello_jsp.java的源文件，这个文件就是Tomcat把JSP自动转换成的Servlet源码。
