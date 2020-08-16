@@ -496,13 +496,22 @@ private String parseLanguageFromCookie(HttpServletRequest req) {
 
 ## JSP开发
 
-JSP是Java Server Pages的缩写，它的文件必须放到/src/main/webapp下，文件名必须以.jsp结尾，整个文件与HTML并无太大区别，但需要插入变量，或者动态输出的地方，使用特殊指令<% ... %>。
+JSP是Java Server Pages的缩写，它的文件必须放到/src/main/webapp下，文件名必须以.jsp结尾。
 
-整个JSP的内容实际上是一个HTML，但是稍有不同：包含在<%--和--%>之间的是JSP的注释，它们会被完全忽略；包含在<%和%>之间的是Java代码，可以编写任意Java代码；如果使用<%= xxx %>则可以快捷输出一个变量的值。
+整个JSP的内容实际上是一个HTML，但是稍有不同：
 
-JSP页面内置了几个变量：out：表示HttpServletResponse的PrintWriter；session：表示当前HttpSession对象；request：表示HttpServletRequest对象。这几个变量可以直接使用。
+- 包含在<%--和--%>之间的是JSP的注释，它们会被完全忽略；
+- 包含在<%和%>之间的是Java代码，可以编写任意Java代码；
+- 如果使用<%= xxx %>则可以快捷输出一个变量的值；
+- JSP页面本身可以通过page指令<%@ page import="java.io.*" %>引入Java类。
 
-访问JSP页面时，可以直接指定完整路径进行访问。
+JSP页面内置了几个变量：
+
+- out：表示HttpServletResponse的PrintWriter；
+- session：表示当前HttpSession对象；
+- request：表示HttpServletRequest对象。这几个变量可以直接使用。
+
+**访问JSP页面时，可以直接指定完整路径进行访问**。
 
 JSP和Servlet有什么区别。其实它们没有任何区别，因为JSP在执行前首先被编译成一个Servlet。在Tomcat的临时目录下，可以找到一个hello_jsp.java的源文件，这个文件就是Tomcat把JSP自动转换成的Servlet源码。
 
@@ -514,11 +523,49 @@ JSP是一种在HTML中嵌入动态输出的文件，它和Servlet正好相反，
 
 Servlet适合编写Java代码，实现各种复杂的业务逻辑，但不适合输出复杂的HTML；JSP适合编写HTML，并在其中插入动态内容，但不适合编写复杂的Java代码。
 
-需要展示的User被放入HttpServletRequest中以便传递给JSP，因为**一个请求对应一个HttpServletRequest**，我们也无需清理它，处理完该请求后HttpServletRequest实例将被丢弃；
+```java
+@WebServlet(urlPatterns = "/user")
+public class UserServlet extends HttpServlet {
+    @Override
+    protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
+        School school = new School("No.1 Middle School", "101 North Street");
+        User user = new User(123, "Bob", school);
+        // 将model放到HttpServletRequest中：
+        req.setAttribute("user", user);
+        // 将Request和Response转发给user.jsp
+        req.getRequestDispatcher("/WEB-INF/user.jsp").forward(req, resp);
+    }
+}
+```
 
-**把user.jsp放到/WEB-INF/目录下，是因为WEB-INF是一个特殊目录，Web Server会阻止浏览器对WEB-INF目录下任何资源的访问，这样就防止用户通过/user.jsp路径直接访问到JSP页面**；
+```html
+<%@ page import="com.itranswarp.learnjava.bean.*"%>
+<%
+    User user = (User) request.getAttribute("user");
+%>
+<html>
+<head>
+    <title>Hello World - JSP</title>
+</head>
+<body>
+    <h1>Hello <%= user.name %>!</h1>
+    <p>School Name:
+    <span style="color:red">
+        <%= user.school.name %>
+    </span>
+    </p>
+    <p>School Address:
+    <span style="color:red">
+        <%= user.school.address %>
+    </span>
+    </p>
+</body>
+</html>
+```
 
-JSP页面首先从request变量获取User实例，然后在页面中直接输出，此处未考虑HTML的转义问题，有潜在安全风险。
+- 需要展示的User被放入HttpServletRequest中以便传递给JSP，因为**一个请求对应一个HttpServletRequest**，我们也无需清理它，处理完该请求后HttpServletRequest实例将被丢弃；
+- **把user.jsp放到/WEB-INF/目录下，是因为WEB-INF是一个特殊目录，Web Server会阻止浏览器对WEB-INF目录下任何资源的访问，这样就防止用户通过/user.jsp路径直接访问到JSP页面**；
+- JSP页面首先从request变量获取User实例，然后在页面中直接输出，此处未考虑HTML的转义问题，有潜在安全风险。
 
 我们把UserServlet看作业务逻辑处理，把User看作模型，把user.jsp看作渲染，这种设计模式通常被称为MVC：Model-View-Controller，即UserServlet作为控制器（Controller），User作为模型（Model），user.jsp作为视图（View）。
 
@@ -528,12 +575,18 @@ MVC模式是一种分离**业务逻辑**和**显示逻辑**的设计模式，广
 
 ## MVC高级开发
 
-直接把MVC搭在Servlet和JSP之上还是不太好：**Servlet提供的接口仍然偏底层**，需要实现Servlet调用相关接口；JSP对页面开发不友好，更好的替代品是**模板引擎**；**业务逻辑最好由纯粹的Java类实现**，而不是强迫继承自Servlet。
+直接把MVC搭在Servlet和JSP之上还是不太好：
 
-最早的开发是从套接字的通讯流分别获取输入流和输出流，从输入流中分析出完整的请求消息，书写完整的响应消息到输出流中完成一次开发。后来有了servlet-api包，它在底层分别封装了输入流和输出流为request对象和response对象，我们通过在这两个对象上调用各种现成的方法来进行开发。
+- **Servlet提供的接口仍然偏底层**，需要实现Servlet调用相关接口；
+- JSP对页面开发不友好，更好的替代品是**模板引擎**；
+- **业务逻辑最好由纯粹的Java类实现**，而不是强迫继承自Servlet。
+
+1. 最早的开发是从socket对象中获取输入流和输出流，从输入流中分析出完整的请求消息，书写完整的响应消息到输出流中完成一次开发。
+2. 后来有了servlet-api包，它在底层分别封装了输入流和输出流为request对象和response对象，我们通过在这两个对象上调用各种现成的方法来进行开发。
 
 一个MVC框架是**基于Servlet基础抽象出更高级的接口**，使得上层基于MVC框架的开发可以**不涉及Servlet相关的HttpServletRequest等接口**，处理多个请求更加灵活，并且可以使用任意模板引擎，不必使用JSP。
-能不能通过普通的Java类实现MVC的Controller。
+
+我们能不能通过普通的Java类实现MVC的Controller：
 
 ```Java
 public class UserController {
@@ -542,7 +595,7 @@ public class UserController {
     public ModelAndView hello(String name) {
         ...
     }
-    // 如果是POST请求，我们希望MVC框架能直接把Post参数变成一个JavaBean后通过方法参数传入。
+    // 如果是POST请求，我们希望MVC框架能直接把Post参数（Body数据）变成一个JavaBean后通过方法参数传入。
     @PostMapping("/signin")
     public ModelAndView doSignin(SignInBean bean) {
         ...
@@ -555,6 +608,8 @@ public class UserController {
 }
 ```
 
+### 设计MVC框架
+
 在上文中，我们已经定义了上层代码编写Controller的一切接口信息，并且并不要求实现特定接口，只需返回ModelAndView对象，该对象包含一个View和一个Model。实际上View就是模板的路径，而Model可以用一个`Map<String, Object>`表示，因此，ModelAndView定义非常简单。
 
 ```Java
@@ -564,21 +619,23 @@ public class ModelAndView {
 }
 ```
 
-比较复杂的是我们需要在MVC框架中**创建一个接收所有请求的Servlet**，通常我们把它命名为DispatcherServlet，它总是映射到/，然后，**根据不同的Controller的方法定义的@Get或@Post的Path决定调用哪个方法**，最后，获得方法返回的ModelAndView后，渲染模板，写入HttpServletResponse，即完成了整个MVC的处理。
+比较复杂的是我们需要在MVC框架中**创建一个接收所有请求的Servlet**，通常我们把它命名为`DispatcherServlet`，它总是映射到`/`，然后，**根据不同的Controller的方法定义的@Get或@Post的Path决定调用哪个方法**，最后，获得方法返回的ModelAndView后，渲染模板，写入HttpServletResponse，即完成了整个MVC的处理。
 
 <img src="./image/MVC架构.jpg">
 
 其中，DispatcherServlet以及如何渲染均由MVC框架实现，**在MVC框架之上只需要编写每一个Controller**。
 
-[MVC高级开发](https://www.liaoxuefeng.com/wiki/1252599548343744/1337408645759009)。
+使用MVC框架后，浏览器访问路径`/hello`的一个处理流程：
 
-一个MVC框架是基于Servlet基础抽象出更高级的接口，使得上层基于MVC框架的开发可以不涉及Servlet相关的HttpServletRequest等接口，处理多个请求更加灵活，并且可以使用任意模板引擎，不必使用JSP。
-
-使用MVC框架后浏览器访问路径/hello的一个处理流程：容器实例化了映射路径为/的Servlet-`DispatcherServlet`，实例化后自动调用了该Servlet中定义的`init()`方法，该方法内部将所有被扫描到的controller类中定义的所有方法和方法使用的注解当中的映射路径进行绑定；以GET方式请求/hello路径于是调用了DispatcherServlet中的`doGet`方法，doGet方法转而调用了`process`方法；在process方法内部首先获取映射了/hello路径的来自IndexController类中的hello()方法封装后的`dispatcher`，这是一个GetDispatcher；之后调用GetDispatcher的`invoke`方法，该方法内部构造了方法所需的实参列表，并再次通过反射传入实参调用`hello()`方法，获得由hello()方法返回的`ModelAndView`对象；在process方法末尾将模板引擎渲染后的数据写入到响应当中。
+  1. 容器实例化了映射路径为`/`的`DispatcherServlet`，实例化后自动调用了该`Servlet`中定义的`init()`方法，该方法内部将所有被扫描到的`Controller`类中定义的所有方法和方法使用的注解当中的映射路径进行绑定；
+  2. 以`GET`方式请求`/hello`路径于是调用了`DispatcherServlet`中的`doGet`方法，`doGet`方法转而调用了`process`方法；
+  3. 在`process`方法内部首先获取映射了`/hello`路径的来自`IndexController`类中的`hello()`方法封装后的`dispatcher`，这是一个`GetDispatcher`；
+  4. 之后调用`GetDispatcher`的`invoke`方法，该方法内部构造了方法所需的实参列表，并再次通过反射传入实参调用`hello()`方法，获得由`hello()`方法返回的`ModelAndView`对象；
+  5. 在`process`方法末尾使用模板引擎将数据渲染到模板并写入到响应当中。
 
 <img src="./image/MVC大致流程.jpg">
 
-基于上述MVC框架的底层封装，开发者只需编写Controller类，写好注解映射路径，以及Model和View之间的绑定关系。
+通过MVC框架的底层封装，开发者只需编写Controller类，写好注解映射路径，以及Model和View之间的绑定关系。
 
 **反射是为了解决在运行期，对某个实例一无所知的情况下，如何调用其方法。在上述框架中，使用反射根据请求路径寻找指定方法并进行调用**。
 
