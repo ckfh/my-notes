@@ -1,5 +1,18 @@
 # 记录
 
+## URI
+
+```java
+// Web App名称为hello，访问/hello/index
+req.getRequestURI(); // "/hello/index"
+req.getContextPath(); // "/hello"
+req.getRequestURI().substring(req.getContextPath().length()); // "/index"
+// Web App名称为ROOT，访问/index
+req.getRequestURI(); // "/index"
+req.getContextPath(); // ""
+req.getRequestURI().substring(req.getContextPath().length()); // "/index"
+```
+
 ## TOMCAT命令行乱码
 
 打开conf目录里的context文件，将所有的`UTF-8`替换为`GBK`保存。

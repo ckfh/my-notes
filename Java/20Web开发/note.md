@@ -623,21 +623,61 @@ public class ModelAndView {
 
 <img src="./image/MVC架构.jpg">
 
-其中，DispatcherServlet以及如何渲染均由MVC框架实现，**在MVC框架之上只需要编写每一个Controller**。
+其中，DispatcherServlet以及如何渲染均由MVC框架实现，在MVC框架之上只需要编写每一个Controller，**和之前的开发相比，servlet的数量大幅减少，只有几个主要的Servlet来接收特定请求**。
 
 使用MVC框架后，浏览器访问路径`/hello`的一个处理流程：
 
-  1. 容器实例化了映射路径为`/`的`DispatcherServlet`，实例化后自动调用了该`Servlet`中定义的`init()`方法，该方法内部将所有被扫描到的`Controller`类中定义的所有方法和方法使用的注解当中的映射路径进行绑定；
+  0. 容器实例化了`DispatcherServlet`以及`FileServlet`，因为`/hello`路径不在`FileServlet`的映射路径内，因此容器将该请求交由`DispatcherServlet`处理。
+  1. 容器实例化`DispatcherServlet`后自动调用了该`Servlet`中定义的`init()`方法，该方法内部将所有被扫描到的`Controller`类中定义的所有方法和方法使用的注解当中的映射路径进行绑定；
   2. 以`GET`方式请求`/hello`路径于是调用了`DispatcherServlet`中的`doGet`方法，`doGet`方法转而调用了`process`方法；
   3. 在`process`方法内部首先获取映射了`/hello`路径的来自`IndexController`类中的`hello()`方法封装后的`dispatcher`，这是一个`GetDispatcher`；
-  4. 之后调用`GetDispatcher`的`invoke`方法，该方法内部构造了方法所需的实参列表，并再次通过反射传入实参调用`hello()`方法，获得由`hello()`方法返回的`ModelAndView`对象；
+  4. 之后调用`GetDispatcher`的`invoke`方法，该方法内部构造了方法所需的**实参列表**，使用反射机制传入实例、实参调用`hello()`方法，获得由`hello()`方法返回的`ModelAndView`对象；
   5. 在`process`方法末尾使用模板引擎将数据渲染到模板并写入到响应当中。
 
 <img src="./image/MVC大致流程.jpg">
 
-通过MVC框架的底层封装，开发者只需编写Controller类，写好注解映射路径，以及Model和View之间的绑定关系。
+**通过MVC框架的底层封装，开发者只需编写Controller类，写好注解映射路径、方法参数定义、内部逻辑即可。方法参数传入以及方法执行都是交由底层的MVC框架利用反射机制去完成的**。
 
 **反射是为了解决在运行期，对某个实例一无所知的情况下，如何调用其方法。在上述框架中，使用反射根据请求路径寻找指定方法并进行调用**。
+
+```java
+@WebServlet(urlPatterns = "/user")
+public class UserServlet extends HttpServlet {
+    @Override
+    protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
+        School school = new School("No.1 Middle School", "101 North Street");
+        User user = new User(123, "Bob", school);
+        // 将model放到HttpServletRequest中：
+        req.setAttribute("user", user);
+        // 将Request和Response转发给user.jsp
+        req.getRequestDispatcher("/WEB-INF/user.jsp").forward(req, resp);
+    }
+}
+public class UserController {
+    // 如果是GET请求，我们希望MVC框架能直接把URL参数按方法参数对应起来然后传入。
+    @GetMapping("/hello")
+    public ModelAndView hello(String name) {
+        ...
+    }
+    // 如果是POST请求，我们希望MVC框架能直接把Post参数（Body数据）变成一个JavaBean后通过方法参数传入。
+    @PostMapping("/signin")
+    public ModelAndView doSignin(SignInBean bean) {
+        ...
+    }
+    // 为了增加灵活性，如果Controller的方法在处理请求时需要访问HttpServletRequest、HttpServletResponse、HttpSession这些实例时，只要方法参数有定义，就可以自动传入。
+    @GetMapping("/signout")
+    public ModelAndView signout(HttpSession session) {
+        ...
+    }
+}
+```
+
+从上述两个类的对比可以看出：
+
+  1. 使用MVC框架之后，Controller不需要再从HttpServlet继承；
+  2. 使用了更高级的接口`GetMapping`、`PostMapping`代替了`WebServlet`完成了路径映射逻辑，处理多个请求更加灵活；
+  3. `ModelAndView`代替了`setAttribute`和`getRequestDispatcher`完成了数据到模板的绑定逻辑;
+  4. 不必使用JSP，而是使用更加灵活的模板引擎完成视图渲染。
 
 ## 使用Filter
 
