@@ -270,10 +270,12 @@ HttpServletRequest封装了一个HTTP请求，它实际上是从ServletRequest�
 - getCookies()：返回请求携带的所有Cookie；
 - getHeader(name)：获取指定的Header，对Header名称不区分大小写；
 - getHeaderNames()：返回所有Header名称；
-- getInputStream()：如果该请求带有HTTP Body，该方法将打开一个输入流用于读取Body；
-- getReader()：和getInputStream()类似，但打开的是Reader；
+- getInputStream()：**如果该请求带有HTTP Body，该方法将打开一个输入流用于读取Body**，返回`javax.servlet.ServletInputStream`；
+- getReader()：和getInputStream()类似，但打开的是Reader，返回`java.io.BufferedReader`；
 - getRemoteAddr()：返回客户端的IP地址；
 - getScheme()：返回协议类型，例如，"http"，"https"；
+
+其中`getInputStream()`和`getReader()`可以在多个组件之间被多次调用，反复地向同一个Socket流中写入数据，限制在于如果第一次使用`getInputStream()`打开输出流，那么后续的流操作也只能通过该方法`getInputStream()`打开输出流，但是我们可以通过IO章节中所谓的装饰器模式转换字节流为字符流。
 
 此外，HttpServletRequest还有两个方法：setAttribute()和getAttribute()，可以给当前HttpServletRequest对象附加多个Key-Value，相当于把HttpServletRequest当作一个`Map<String, Object>`使用。
 
@@ -296,7 +298,13 @@ HttpServletResponse封装了一个HTTP响应。由于HTTP响应必须先发送He
 
 ### Servlet多线程模型
 
-**一个Servlet类在服务器中只有一个实例，但对于每个HTTP请求，Web服务器会使用多线程执行请求。因此，一个Servlet的doGet()、doPost()等处理请求的方法是多线程并发执行的。如果Servlet中定义了字段，要注意多线程并发访问的问题（类实例只有一个，但是实例方法会被多线程并发执行）**。
+一个Servlet类在服务器中只有一个实例，但对于每个HTTP请求，Web服务器会使用多线程执行请求（就像最开始我们自己写的TCP服务器那样使用多线程处理来自不同客户端的请求，想想来自不同客户端的请求同时到达服务器但是不使用多线程处理的糟糕场景）。
+
+因此，一个Servlet的doGet()、doPost()等处理请求的方法是多线程并发执行的。如果Servlet中定义了成员字段，要注意多线程并发访问的问题。
+
+对于每个请求，Web服务器会创建唯一的HttpServletRequest和HttpServletResponse实例，因此，HttpServletRequest和HttpServletResponse实例只有在当前处理线程中有效，它们总是局部变量，不存在多线程共享的问题（所以在doGet()、doPost()方法内部可以放心地对这两个实例进行读写操作，不用在意并发问题）。
+
+因此，要注意在一个线程内部多个组件对封装后的请求和响应对象进行操作时，操作的是同一个实例。例如：两个组件，前一个组件向Socket流中写入数据，后一个组件也向Socket流中写入数据，由于它们写入的就是同一个Socket流，最后客户端接收到的就是两个组件共同写入的数据。
 
 ```java
 public class HelloServlet extends HttpServlet {
@@ -304,13 +312,10 @@ public class HelloServlet extends HttpServlet {
     private Map<String, String> map = new ConcurrentHashMap<>();
 
     protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
-        // 注意读写map字段是多线程并发的:
         this.map.put(key, value);
     }
 }
 ```
-
-**对于每个请求，Web服务器会创建唯一的HttpServletRequest和HttpServletResponse实例，因此，HttpServletRequest和HttpServletResponse实例只有在当前处理线程中有效，它们总是局部变量，不存在多线程共享的问题**。
 
 ## 重定向与转发
 
@@ -700,14 +705,17 @@ public class EncodingFilter implements Filter {
     @Override
     public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain) throws IOException, ServletException {
         System.out.println("EncodingFilter:doFilter");
-        // 在servlet中就不需要单独配置请求和响应的编码格式:
+        // 在后续的servlet中就不需要单独配置请求和响应的编码格式:
         request.setCharacterEncoding("UTF-8");
         response.setCharacterEncoding("UTF-8");
         // 继续处理请求:
         chain.doFilter(request, response);
+        // TODO: 可以继续处理request和response实例。
     }
 }
 ```
+
+`chain.doFilter(request, response)`是一个阻塞操作，当后续组件业务逻辑完成后，如果继续对request和response实例进行操作，例如对request实例设置新的编码格式，就会覆盖后续组件里设置的编码格式，对response实例写入数据，那么数据就会附加在Socket流的末尾，最后一期返回给客户端。
 
 <img src="./image/使用Filter02.jpg">
 
@@ -745,8 +753,10 @@ public class AuthFilter implements Filter {
         HttpServletResponse resp = (HttpServletResponse) response;
         if (req.getSession().getAttribute("user") == null) {
             System.out.println("AuthFilter: not signin!");
+            // 如果用户未登录，则直接向客户端发送重定向指令，让客户端请求新的路径:
             resp.sendRedirect("/signin");
         } else {
+            // 用户已登录，让后续组件继续处理:
             chain.doFilter(request, response);
         }
     }
@@ -755,10 +765,7 @@ public class AuthFilter implements Filter {
 
 当用户没有登录时，在AuthFilter内部，直接调用resp.sendRedirect()发送重定向，且没有调用chain.doFilter()，因此，当用户没有登录时，请求到达AuthFilter后，不再继续处理，即后续的Filter和任何Servlet都没有机会处理该请求了。
 
-- 如果一个请求路径类似`/user/profile`，那么它会被上述3个Filter依次处理；
-- 如果一个请求路径类似`/test`，那么它会被上述2个Filter依次处理（不会被AuthFilter处理）。
-
-**Filter可以有针对性地拦截或者放行HTTP请求**。
+**因此，Filter可以有针对性地拦截或者放行HTTP请求**。
 
 如果一个Filter在当前请求中生效，但什么都没有做：
 
@@ -774,9 +781,9 @@ public class MyFilter implements Filter {
 
 那么，用户将看到一个空白页，因为请求没有继续处理，默认响应是200+空白输出。
 
-**如果Filter要使请求继续被处理，就一定要调用chain.doFilter()**！
+**因此，如果Filter要使请求继续被处理，就一定要调用chain.doFilter()**！
 
-如果我们使用上一节介绍的MVC模式，即一个统一的DispatcherServlet入口，加上多个Controller，这种模式下Filter仍然是正常工作的。例如，一个处理`/user/*`的Filter实际上作用于那些处理`/user/`开头的Controller方法之前。
+如果我们使用上一节介绍的MVC模式，即一个统一的DispatcherServlet入口，加上多个Controller，这种模式下Filter仍然是正常工作的。例如，一个处理`/user/*`的Filter实际上作用于那些处理`/user/`开头的Controller方法之前（因为Filter先于Servlet处理请求，而Controller方法是在Servlet当中被调用的）。
 
 - Filter是一种对HTTP请求进行预处理的组件，它可以构成一个处理链，使得公共处理代码能集中到一起；
 - Filter适用于日志、登录检查、全局设置等；
@@ -784,15 +791,16 @@ public class MyFilter implements Filter {
 
 ### 修改请求
 
-Filter可以对请求进行预处理，因此，我们可以把很多**公共预处理逻辑放到Filter中完成**。
+> 借助HttpServletRequestWrapper，我们可以在Filter中实现对原始HttpServletRequest的修改。
 
 ```Java
 // 在Web应用中经常需要处理用户上传文件，例如，一个UploadServlet可以简单地编写如下：
 @WebServlet(urlPatterns = "/upload/file")
 public class UploadServlet extends HttpServlet {
-    // 上传文件使用的是POST请求！覆写的是doPost()方法不是doGet()方法。
+    // 上传文件使用的是POST请求！注意覆写的是doPost()方法不是doGet()方法:
     @Override
     protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
+        // 读取Request Body:
         InputStream input = req.getInputStream();
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         byte[] buffer = new byte[1024];
@@ -802,7 +810,8 @@ public class UploadServlet extends HttpServlet {
                 break;
             output.write(buffer, 0, len);
         }
-        String uploadedText = output.toString("UTF-8");
+        // 假设用户上传的是一份文本数据，反序列化后在页面中进行展示:
+        String uploadedText = output.toString(StandardCharsets.UTF_8);
         PrintWriter pw = resp.getWriter();
         pw.write("<h1>Uploaded:</h1>");
         pw.write("<pre><code>");
@@ -815,6 +824,7 @@ public class UploadServlet extends HttpServlet {
 
 ```Java
 // 我们知道，如果在上传文件的同时，把文件的哈希也传过来，服务器端做一个验证，就可以确保用户上传的文件一定是完整的。
+// 也就是说服务端对上传的文件按照客户端传递的哈希方式进行哈希，之后将哈希值和客户端上传的哈希值进行比较验证。
 // 这个验证逻辑非常适合写在ValidateUploadFilter中，因为它可以复用。
 @WebFilter(urlPatterns = "/upload/*")
 public class ValidateUploadFilter implements Filter {
@@ -822,32 +832,33 @@ public class ValidateUploadFilter implements Filter {
     public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain) throws IOException, ServletException {
         HttpServletRequest req = (HttpServletRequest) request;
         HttpServletResponse resp = (HttpServletResponse) response;
-        // 获取客户端传入的签名方法和签名
+        // 获取客户端传入的签名方法和签名:
         String digest = req.getHeader("Signature-Method");
         String signature = req.getHeader("Signature");
         if (digest == null || digest.isEmpty() || signature == null || signature.isEmpty()) {
             this.sendErrorPage(resp, "Missing signature.");
             return;
         }
-        // 读取 Request 的 Body 并验证签名
+        // 读取Request的Body并验证签名:
         MessageDigest md = this.getMessageDigest(digest);
         InputStream input = new DigestInputStream(request.getInputStream(), md);
         byte[] buffer = new byte[1024];
-        // 对流进行读取会同时更新摘要
+        // 读取输入流的同时也会更新摘要:
         for (; ; ) {
             int len = input.read(buffer);
             if (len == -1)
                 break;
         }
         String actual = this.toHexString(md.digest());
+        // 在服务端对上传文件进行哈希后和客户端上传的哈希值进行对比:
         if (!signature.equals(actual)) {
             this.sendErrorPage(resp, "Invalid signature.");
             return;
         }
-        // 验证成功后继续处理
+        // 验证成功后继续处理:
         chain.doFilter(request, response);
     }
-
+    // 将byte[]转换为hex string:
     private String toHexString(byte[] digest) {
         StringBuilder sb = new StringBuilder();
         for (byte b : digest) {
@@ -855,7 +866,7 @@ public class ValidateUploadFilter implements Filter {
         }
         return sb.toString();
     }
-
+    // 根据名称创建MessageDigest:
     private MessageDigest getMessageDigest(String name) throws ServletException {
         try {
             return MessageDigest.getInstance(name);
@@ -863,7 +874,7 @@ public class ValidateUploadFilter implements Filter {
             throw new ServletException(e);
         }
     }
-
+    // 发送一个错误响应:
     private void sendErrorPage(HttpServletResponse resp, String errorMessage) throws IOException {
         resp.setStatus(HttpServletResponse.SC_BAD_REQUEST);
         PrintWriter pw = resp.getWriter();
@@ -875,9 +886,16 @@ public class ValidateUploadFilter implements Filter {
 }
 ```
 
-ValidateUploadFilter对签名进行验证的逻辑是没有问题的，但是，细心的童鞋注意到，UploadServlet并未读取到任何数据！这里的原因是**对HttpServletRequest进行读取时，只能读取一次**。如果Filter调用getInputStream()读取了一次数据，后续Servlet处理时，再次读取，将无法读到任何数据。
+ValidateUploadFilter对签名进行验证的逻辑是没有问题的，但是，细心的童鞋注意到，UploadServlet并未读取到任何数据！这里的原因是**对HttpServletRequest进行读取时，只能读取一次**。如果Filter调用`getInputStream()`读取了一次数据，后续Servlet处理时，再次读取，将无法读到任何数据。
 
-这个时候，我们需要一个“伪造”的HttpServletRequest，具体做法是使用代理模式，对getInputStream()和getReader()返回一个新的流。
+**其实就是流本身的特性决定的，在流读取的时候实际上是有一个游标在标记读取的位置，每次流被打开并读取，都是从游标的位置开始读取。而第一次读取流的时候就读取到了末尾，第二次读取流的时候当然读取不到任何数据了**。
+
+为了重头开始读取流：
+
+  1. 要么将游标的位置重置回开头；
+  2. 要么就在第一次读取流的同时将数据保存到一个数据结构中，需要再次读取流的时候就从这个数据结构当中读取。
+
+在这里，我们“伪造”一个的HttpServletRequest，具体做法是使用代理模式，对`getInputStream()`和`getReader()`返回一个新的流。
 
 ```Java
 // public class HttpServletRequestWrapper extends ServletRequestWrapper implements HttpServletRequest
@@ -896,7 +914,7 @@ public class ReReadableHttpServletRequest extends HttpServletRequestWrapper {
         // 保存了ValidateUploadFilter读取的byte[]内容，并在调用getInputStream()时通过byte[]构造了一个新的ServletInputStream。
         this.body = body;
     }
-
+    // 返回InputStream:
     public ServletInputStream getInputStream() throws IOException {
         if (this.open) {
             throw new IllegalStateException("Cannot re-open input stream!");
@@ -931,7 +949,7 @@ public class ReReadableHttpServletRequest extends HttpServletRequestWrapper {
             }
         };
     }
-
+    // 返回Reader:
     public BufferedReader getReader() throws IOException {
         if (this.open) {
             throw new IllegalStateException("Cannot re-open input reader!");
@@ -958,51 +976,71 @@ public void doFilter(ServletRequest request, ServletResponse response, FilterCha
     ...
     // 我们使用代理模式将原请求及已被读取的数据重新封装成一个新的HttpServletRequest对象供后续对象进行调用。
     // 符合代理模式的逻辑即封装一个已有接口，并向调用方返回相同的接口类型。
-    // 实际就是filter读取原始字节流后顺带读取到一个字节数组中，而后续对象读取字节流时仍感觉像是在读取原始字节流，但实际上读取的是由filter构造的字节数组。
+    // 实际就是Filter读取原始字节流后顺带读取到一个字节数组中，而后续对象读取字节流时仍感觉像是在读取原始字节流，但实际上读取的是由Filter构造的字节数组。
     chain.doFilter(new ReReadableHttpServletRequest(req, output.toByteArray()), response);
 }
 ```
 
-再注意到我们编写ReReadableHttpServletRequest时，是从HttpServletRequestWrapper继承，而不是直接实现HttpServletRequest接口。这是因为，Servlet的每个新版本都会对接口增加一些新方法，从HttpServletRequestWrapper继承可以确保新方法被正确地覆写了，因为HttpServletRequestWrapper是由Servlet的jar包提供的，目的就是为了让我们方便地实现对HttpServletRequest接口的代理。
+再注意到我们编写ReReadableHttpServletRequest时，是从HttpServletRequestWrapper继承，而不是直接实现HttpServletRequest接口。这是因为，Servlet的每个新版本都会对接口增加一些新方法，从HttpServletRequestWrapper继承可以确保新方法被正确地覆写了，因为HttpServletRequestWrapper是由Servlet的jar包提供的，目的就是为了让我们方便地实现对HttpServletRequest接口的**代理**。`HttpServletRequestWrapper extends ServletRequestWrapper implements HttpServletRequest`。
 
-总结一下对HttpServletRequest接口进行代理的步骤：从HttpServletRequestWrapper继承一个XxxHttpServletRequest，需要传入原始的HttpServletRequest实例；覆写某些方法，使得新的XxxHttpServletRequest实例看上去“改变”了原始的HttpServletRequest实例；在doFilter()中传入新的XxxHttpServletRequest实例。
+总结一下对HttpServletRequest接口进行代理的步骤：
+
+  1. 从HttpServletRequestWrapper继承一个XxxHttpServletRequest，**需要传入原始的HttpServletRequest实例**；
+  2. 覆写某些方法，使得新的XxxHttpServletRequest实例看上去“改变”了原始的HttpServletRequest实例；
+  3. 在doFilter()中传入新的XxxHttpServletRequest实例。
 
 虽然整个Filter的代码比较复杂，但它的好处在于：这个Filter在整个处理链中实现了灵活的“可插拔”特性，即是否启用对Web应用程序的其他组件（Filter、Servlet）完全没有影响。
 
-借助HttpServletRequestWrapper，我们可以在Filter中实现对原始HttpServletRequest的修改。
-
 ### 修改响应
+
+> 通过HttpServletResponseWrapper构造一个“伪造”的HttpServletResponse，这样就能拦截到写入的数据。
 
 假设我们编写了一个Servlet，但由于业务逻辑比较复杂，处理该请求需要耗费很长的时间。好消息是每次返回的**响应内容是固定的**，因此，如果我们能使用缓存将结果缓存起来，就可以大大提高Web应用程序的运行效率。
 
-缓存逻辑最好不要在Servlet内部实现，因为我们希望能复用缓存逻辑，所以，编写一个CacheFilter最合适。
+```java
+@WebServlet(urlPatterns = "/slow/hello")
+public class HelloServlet extends HttpServlet {
+    protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
+        resp.setContentType("text/html");
+        // 模拟耗时1秒:
+        try {
+            Thread.sleep(1000);
+        } catch (InterruptedException e) {
+        }
+        PrintWriter pw = resp.getWriter();
+        pw.write("<h1>Hello, world!</h1>");
+        pw.flush();
+    }
+}
+```
+
+缓存逻辑最好不要在Servlet内部实现，因为我们希望能**复用**缓存逻辑，所以，编写一个CacheFilter最合适。
 
 ```Java
 @WebFilter(urlPatterns = "/slow/*")
 public class CacheFilter implements Filter {
-    // Path到byte[]的缓存
+    // Path到byte[]的缓存:
     private Map<String, byte[]> cache = new ConcurrentHashMap<>();
 
     @Override
     public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain) throws IOException, ServletException {
         HttpServletRequest req = (HttpServletRequest) request;
         HttpServletResponse resp = (HttpServletResponse) response;
-        // 获取Path
+        // 获取Path:
         String url = req.getRequestURI();
-        // 获取缓存内容
+        // 获取缓存内容:
         byte[] data = this.cache.get(url);
         resp.setHeader("X-Cache-Hit", data == null ? "No" : "Yes");
         if (data == null) {
-            // 缓存未找到，构造一个伪造的Response
+            // 缓存未找到,构造一个伪造的Response:
             CachedHttpServletResponse wrapper = new CachedHttpServletResponse(resp);
-            // 让下游组件写入数据到伪造的Response
+            // 让下游组件写入数据到伪造的Response:
             chain.doFilter(request, wrapper);
-            // 从伪造的Response中读取写入的内容并放入缓存
+            // 从伪造的Response中读取写入的内容并放入缓存:
             data = wrapper.getContent();
             this.cache.put(url, data);
         }
-        // 如果缓存被找到，则不再交给下游组件处理，而是直接返回缓存
-        // 写入到原始的Response
+        // 写入到原始的Response:
         ServletOutputStream output = resp.getOutputStream();
         output.write(data);
         output.flush();
@@ -1010,7 +1048,9 @@ public class CacheFilter implements Filter {
 }
 ```
 
-实现缓存的关键在于，调用doFilter()时，我们**不能传入原始的HttpServletResponse**，因为这样就会写入Socket，我们也就无法获取下游组件写入的内容。如果我们传入的是“伪造”的HttpServletResponse，让下游组件写入到我们预设的ByteArrayOutputStream，我们就“截获”了下游组件写入的内容，于是，就可以把内容缓存起来，再通过原始的HttpServletResponse实例写入到网络。
+**上述缓存被找到的时候，不会执行下游组件的业务逻辑，因此下游组件的业务逻辑最好是和后续业务无关的操作（自己的感想）**。
+
+实现缓存的关键在于，调用doFilter()时，我们**不能传入原始的HttpServletResponse，因为这样就会写入Socket**，我们也就无法获取下游组件写入的内容（**因为原始输出流并没有提供读取已写入数据内容的功能**）。如果我们传入的是“伪造”的HttpServletResponse，让下游组件写入到我们预设的ByteArrayOutputStream，我们就“截获”了下游组件写入的内容，于是，就可以把内容缓存起来，再通过原始的HttpServletResponse实例写入到网络。
 
 ```Java
 public class CachedHttpServletResponse extends HttpServletResponseWrapper {
@@ -1026,15 +1066,16 @@ public class CachedHttpServletResponse extends HttpServletResponseWrapper {
     public CachedHttpServletResponse(HttpServletResponse response) {
         super(response);
     }
-    // 下游组件如果获取Writer
+    // 下游组件如果获取Writer:
     public PrintWriter getWriter() throws IOException {
         if (this.open) {
             throw new IllegalStateException("Cannot re-open writer!");
         }
         this.open = true;
+        // 写入的不是Socket输出流，而是我们提供的内存输出流:
         return new PrintWriter(this.output, false);
     }
-    // 下游组件如果获取OutputStream
+    // 下游组件如果获取OutputStream:
     public ServletOutputStream getOutputStream() throws IOException {
         if (this.open) {
             throw new IllegalStateException("Cannot re-open output stream!");
@@ -1053,20 +1094,20 @@ public class CachedHttpServletResponse extends HttpServletResponseWrapper {
 
             @Override
             public void write(int b) throws IOException {
+                // 写入的不是Socket输出流，而是我们提供的内存输出流:
                 CachedHttpServletResponse.this.output.write(b);
             }
         };
     }
-    // 返回下游组件以为写入到Response实际上是写入到我们构造的一个byte[]数组
+    // 返回下游组件以为是写入到Socket输入流但实际是写入到我们构造的一个byte[]数组:
+    // 我们为输出流提供了一个读取已写入数据的功能:
     public byte[] getContent() {
         return this.output.toByteArray();
     }
 }
 ```
 
-可见，如果我们想要修改响应，就可以通过HttpServletResponseWrapper构造一个“伪造”的HttpServletResponse，这样就能拦截到写入的数据。
-
-修改响应时，最后不要忘记把数据写入原始的HttpServletResponse实例。
+**修改响应时，最后不要忘记把数据写入原始的HttpServletResponse实例**。
 
 这个CacheFilter同样是一个“可插拔”组件，它是否启用不影响Web应用程序的其他组件（Filter、Servlet）。
 

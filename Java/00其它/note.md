@@ -1,5 +1,14 @@
 # 记录
 
+## 路径映射问题
+
+```java
+// 不管后缀是什么都会被匹配
+@WebFilter(urlPatterns = "/*")
+// 优先匹配有具体后缀的路径，其余不匹配路径都由该路径接收
+@WebFilter(urlPatterns = "/")
+```
+
 ## URI
 
 ```java
