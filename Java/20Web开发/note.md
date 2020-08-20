@@ -991,6 +991,8 @@ public void doFilter(ServletRequest request, ServletResponse response, FilterCha
 
 虽然整个Filter的代码比较复杂，但它的好处在于：这个Filter在整个处理链中实现了灵活的“可插拔”特性，即是否启用对Web应用程序的其他组件（Filter、Servlet）完全没有影响。
 
+总结：为什么要修改请求，因为在验证用户上传文件完整性的场景中，filter完整地读取了输入流之后，导致后续的servlet读取输入流时无法读取到任何数据，这是流的特性决定。如何解决这种问题，filter完整读取流的同时将数据存储到一个二进制数组中，我们将原始请求以及该二进制数组封装为一个“伪造”的请求实例，后续的servlet看似是从输入流中读取数据，实际是从该二进制数组中读取。
+
 ### 修改响应
 
 > 通过HttpServletResponseWrapper构造一个“伪造”的HttpServletResponse，这样就能拦截到写入的数据。
@@ -1111,21 +1113,24 @@ public class CachedHttpServletResponse extends HttpServletResponseWrapper {
 
 这个CacheFilter同样是一个“可插拔”组件，它是否启用不影响Web应用程序的其他组件（Filter、Servlet）。
 
+总结：为什么要修改响应，因为在缓存响应结果的场景中，后续的servlet是通过响应实例提供的方法将数据直接写入到socket的字节流当中，但是响应实例本身并没有提供读取已输出数据的方法，为此，我们“伪造”了一个可以读取已输出数据的响应实例，仍然需要封装原始响应实例，但是修改流的输出对象从socket字节流转换为我们自己创建的一个内存输出流，这样后续组件看似是输出到字节流，但实际输出到的是我们提供的内存输出流当中，于是在filter中，我们就可以从这个内存输出流中获取到输出的数据，将数据进行缓存，最后输出到原始的字节流中。
+
 ## 使用Listener
 
 除了Servlet和Filter外，JavaEE的Servlet规范还提供了第三种组件：Listener。
 
-Listener顾名思义就是监听器，有好几种Listener，其中最常用的是ServletContextListener，我们编写一个实现了ServletContextListener接口的类如下：
+Listener顾名思义就是监听器，有好几种Listener，其中最常用的是`ServletContextListener`，我们编写一个实现了ServletContextListener接口的类如下：
 
 ```Java
+// ServletContextListener按照字面意思理解就是容器上下文监听器，可用来监听WebApp是否被初始化，是否被销毁:
 @WebListener
 public class AppListener implements ServletContextListener {
-    // 在此处初始化WebApp，比如打开数据库连接池等
+    // 在此初始化WebApp,例如打开数据库连接池等:
     @Override
     public void contextInitialized(ServletContextEvent sce) {
         System.out.println("WebApp initialized.");
     }
-    // 在此处清理WebApp，比如关闭数据库连接池等
+    // 在此清理WebApp,例如关闭数据库连接池等:
     @Override
     public void contextDestroyed(ServletContextEvent sce) {
         System.out.println("WebApp destroyed.");
@@ -1133,11 +1138,18 @@ public class AppListener implements ServletContextListener {
 }
 ```
 
-任何标注为@WebListener，且实现了特定接口的类会被Web服务器**自动初始化**。上述AppListener实现了ServletContextListener接口，它会在整个Web应用程序初始化完成后，以及Web应用程序关闭后获得回调通知。我们可以把初始化数据库连接池等工作放到contextInitialized()回调方法中，把清理资源的工作放到contextDestroyed()回调方法中，**因为Web服务器保证在contextInitialized()执行后，才会接受用户的HTTP请求**。
+任何标注为@WebListener，且实现了特定接口的类会被Web服务器自动初始化。上述AppListener实现了ServletContextListener接口，**它会在整个Web应用程序初始化完成后，以及Web应用程序关闭后获得回调通知**。我们可以把初始化数据库连接池等工作放到contextInitialized()回调方法中，把清理资源的工作放到contextDestroyed()回调方法中，**因为Web服务器保证在contextInitialized()执行后，才会接受用户的HTTP请求**。
 
 很多第三方Web框架都会通过一个ServletContextListener接口初始化自己。
 
-除了ServletContextListener外，还有几种Listener：HttpSessionListener：监听HttpSession的创建和销毁事件；ServletRequestListener：监听ServletRequest请求的创建和销毁事件；ServletRequestAttributeListener：监听ServletRequest请求的属性变化事件（即调用ServletRequest.setAttribute()方法）；ServletContextAttributeListener：监听ServletContext的属性变化事件（即调用ServletContext.setAttribute()方法）；
+除了ServletContextListener外，还有几种Listener：
+
+- HttpSessionListener：监听`HttpSession`的创建（req.getSession()）和销毁事件；
+- ServletRequestListener：监听`ServletRequest`请求的创建（请求到达）和销毁（相关的处理方法都调用完毕）事件；
+- ServletRequestAttributeListener：监听`ServletRequest`请求的属性变化事件（例如调用ServletRequest.setAttribute()方法）；
+- ServletContextAttributeListener：监听`ServletContext`的属性变化事件（例如调用ServletContext.setAttribute()方法）；
+
+### ServletContext
 
 一个Web服务器可以运行一个或多个WebApp，**对于每个WebApp，Web服务器都会为其创建一个全局唯一的ServletContext实例**，我们在AppListener里面编写的两个回调方法实际上对应的就是ServletContext实例的创建和销毁：
 
@@ -1149,7 +1161,10 @@ public void contextInitialized(ServletContextEvent sce) {
 
 ServletRequest、HttpSession等很多对象也提供getServletContext()方法获取到**同一个ServletContext实例**。**ServletContext实例最大的作用就是设置和共享全局信息**。
 
-通过Listener我们可以监听Web应用程序的生命周期，获取HttpSession等创建和销毁的事件；**ServletContext是一个WebApp运行期的全局唯一实例，可用于设置和共享配置信息**。
+- 通过Listener我们可以监听Web应用程序的生命周期，获取HttpSession等创建和销毁的事件；
+- **ServletContext是一个WebApp运行期的全局唯一实例，可用于设置和共享配置信息**。
+
+**ServletContext和session的区别在于，session通过cookie可以区分不同的客户端，而ServletContext是全局共享，对所有客户端都可见**。
 
 ## 部署
 
