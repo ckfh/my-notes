@@ -1,5 +1,17 @@
 # 笔记
 
+什么是JavaEE？JavaEE是Java Platform Enterprise Edition的缩写，即Java企业平台。我们前面介绍的所有基于标准JDK的开发都是JavaSE，即Java Platform Standard Edition。此外，还有一个小众不太常用的JavaME：Java Platform Micro Edition，是Java移动开发平台（非Android）。
+
+JavaME是一个裁剪后的“微型版”JDK，现在使用很少，我们不用管它。**JavaEE也不是凭空冒出来的，它实际上是完全基于JavaSE，只是多了一大堆服务器相关的库以及API接口**。所有的JavaEE程序，仍然是运行在标准的JavaSE的虚拟机上的。
+
+最早的JavaEE的名称是J2EE：Java 2 Platform Enterprise Edition，后来改名为JavaEE。由于Oracle将JavaEE移交给Eclipse开源组织时，不允许他们继续使用Java商标，所以JavaEE再次改名为Jakarta EE。因为这个拼写比较复杂而且难记，所以我们后面还是用JavaEE这个缩写。
+
+JavaEE并不是一个软件产品，它更多的是一种**软件架构**和**设计思想**。我们可以把JavaEE看作是在JavaSE的基础上，开发的一系列基于服务器的**组件**、**API标准**和**通用架构**。
+
+JavaEE最核心的组件就是基于Servlet标准的Web服务器，开发者编写的应用程序是基于Servlet API并运行在Web服务器内部的。
+
+[规范](https://jakarta.ee/specifications/)
+
 ## Web基础
 
 ### HTTP协议
@@ -1176,36 +1188,36 @@ ServletRequest、HttpSession等很多对象也提供getServletContext()方法获
 
 模板文件当中引用了多少静态文件就会发送多少相应的请求消息，因此WebApp中应当有相应的Servlet来处理这些请求消息。
 
-我们把所有的静态资源文件放入/static/目录，在开发阶段，**有些Web服务器会自动为我们加一个专门负责处理静态文件的Servlet**，但如果IndexServlet映射路径为/，会屏蔽掉处理静态文件的Servlet映射。因此，我们需要自己编写一个处理静态文件的FileServlet：
+我们把所有的静态资源文件放入`/static/`目录，在开发阶段，**有些Web服务器会自动为我们加一个专门负责处理静态文件的Servlet**，但如果IndexServlet映射路径为`/`，会屏蔽掉处理静态文件的Servlet映射。因此，我们需要自己编写一个处理静态文件的FileServlet：
 
 ```Java
 @WebServlet(urlPatterns = "/static/*")
 public class FileServlet extends HttpServlet {
     @Override
     protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
-        // 获取全局唯一的ServletContext实例
-        ServletContext ctx = req.getServletContext();
+        // 获取全局唯一的ServletContext实例:
+        ServletContext ctx = req.getServletContext();:
         // RequestURI包含ContextPath，需要去掉
         String urlPath = req.getRequestURI().substring(ctx.getContextPath().length());
-        // 获取文件真实路径
+        // 获取文件真实路径:
         String filepath = ctx.getRealPath(urlPath);
         if (filepath == null) {
-            // 无法获取到路径
+            // 无法获取到路径:
             resp.sendError(HttpServletResponse.SC_NOT_FOUND);
             return;
         }
         Path path = Paths.get(filepath);
         if (!path.toFile().isFile()) {
-            // 文件不存在
+            // 文件不存在:
             resp.sendError(HttpServletResponse.SC_NOT_FOUND);
             return;
         }
-        // 根据文件名称猜测Content-Type
+        // 根据文件名称猜测Content-Type:
         String mime = Files.probeContentType(path);
         if (mime == null)
             mime = "application/octet-stream";
         resp.setContentType(mime);
-        // 读取文件并写入Response
+        // 读取文件并写入Response:
         OutputStream output = resp.getOutputStream();
         try (InputStream input = new BufferedInputStream(new FileInputStream(filepath))) {
             byte[] buffer = new byte[1024];
@@ -1219,11 +1231,15 @@ public class FileServlet extends HttpServlet {
 }
 ```
 
-类似Tomcat这样的Web服务器，运行的Web应用程序通常都是业务系统，因此，这类服务器也被称为应用服务器。应用服务器并不擅长处理静态文件，也不适合直接暴露给用户。通常，我们在生产环境部署时，总是使用类似Nginx这样的服务器充当反向代理和静态服务器，只有动态请求才会放行给应用服务器，所以，部署架构如下：
+反向代理服务器位于用户与目标服务器之间，但是对于用户而言，反向代理服务器就相当于目标服务器，即用户直接访问反向代理服务器就可以获得目标服务器的资源。同时，用户不需要知道目标服务器的地址，也无须在用户端作任何设定。反向代理服务器通常可用来作为Web加速，即使用反向代理作为Web服务器的前置机来降低网络和服务器的负载，提高访问效率。
+
+类似Tomcat这样的Web服务器，运行的Web应用程序通常都是业务系统，因此，这类服务器也被称为应用服务器。**应用服务器并不擅长处理静态文件，也不适合直接暴露给用户**。通常，我们在生产环境部署时，总是使用类似Nginx这样的服务器充当反向代理和静态服务器，只有动态请求才会放行给应用服务器，所以，部署架构如下：
 
 <img src="./image/部署02.jpg">
 
-```YAML
+实现上述功能的Nginx配置文件如下：
+
+```yaml
 server {
     listen 80;
 
@@ -1259,6 +1275,6 @@ server {
 }
 ```
 
-使用Nginx配合Tomcat服务器，可以充分发挥Nginx作为网关的优势，既可以高效处理静态文件，也可以把https、防火墙、限速、反爬虫等功能放到Nginx中，使得我们自己的WebApp能专注于业务逻辑。
+使用Nginx配合Tomcat服务器，可以充分发挥Nginx作为网关的优势，**既可以高效处理静态文件，也可以把https、防火墙、限速、反爬虫等功能放到Nginx中，使得我们自己的WebApp能专注于业务逻辑**。
 
 部署Web应用程序时，要设计合理的目录结构，**同时考虑开发模式需要便捷性，生产模式需要高性能**。
