@@ -6,12 +6,22 @@
 
 Spring的核心就是提供了一个**IoC容器**，**它可以管理所有轻量级的JavaBean组件，提供的底层服务包括组件的生命周期管理、配置和组装服务、AOP支持，以及建立在AOP基础上的声明式事务服务等**。
 
-个人对于IoC容器的理解：给我的最大感受就是在你写组件的那一个时刻，你不需要去纠结某个将被调用的实例该如何去创建，你就定义好字段或者参数假设自己已经拥有了这个实例，直接用就完事了；比如说我正在编写一个组件用于访问数据库，那我需要有一个datasource的实例对象来帮助实现功能，我“此刻”在编写这个组件的时候，我可以选择将其定义为成员属性或者方法参数，然后直接进行调用即可；个人感觉本质上就是把实例创建的及时必要性给打破了，你可以提前或往后去new这个实例。然后把这个实例交给容器，让容器帮助你注入到需要该实例的地方。有点类似于先定义好成员属性，创建对象后使用相应的setXxx()方法给这个属性进行实例注入，然后调用相应的业务逻辑。但是这个步骤容器也帮助我们完成了。我们写XML配置文件实际上就是在写前面的过程；把new的过程抽取出来，new是肯定要new的，new完以后通过字段/set方法/构造来把new的对象传进去。只不过我们把new的过程交给了容器去做，写XML还算是让我们把new/传值的操作用非Java语言写一遍，但是注解就彻彻底底把这个过程都帮我们省略掉了，当然在创建第三方bean的时候还是写了new的过程，但是传值就不需要了。把new后的对象交给容器去注入。
-你可以想象在主方法里写一大堆的new以及各种注入操作，还不如统一到配置文件里，或者说就不需要，让容器去完成就好了。高效开发/便捷复用。
+以下都是个人理解：
 
-```Java
+  1. `IoC`容器给我的最大感受就是在你在编写组件业务逻辑时，你不需要去纠结某个将被调用的实例该如何去创建，你就定义好成员字段或者方法参数假设“此刻”已经拥有了这个实例，直接用就行。
+  2. 比如说我正在编写一个组件用于访问数据库，那我需要有一个`DataSource`的实例对象来帮助实现功能，我“此刻”在编写这个组件的时候，我可以选择将其定义为成员属性或者方法参数，直接用就行，至于真正的实例对象什么时候创建以及传入通通都交给容器来完成。
+  3. 本质上就是把实例创建的及时必要性给打破了，你可以提前或往后去`new`这个实例，然后把这个实例交给容器，让容器帮助你注入到需要该实例的地方。
+  4. 这就好比我们定义一个普通类时也都是只定义好成员类型及变量名，创建类实例后再使用相应的`setXxx()`方法给这些成员属性进行实例注入，然后调用相应的业务逻辑，但是实例注入这个步骤容器也帮助我们完成了，我们写`XML`配置文件实际上就是在写前面的过程。
+  5. 把`new`的过程抽取出来，`new`是肯定要`new`的，`new`完以后直接通过字段变量或者`setXxx()`方法或者构造方法把`new`的对象传进去。
+  6. 只不过我们把`new`的过程交给了容器去做，写`XML`还算是让我们把`new`以及传值的操作用非`Java`语言写一遍，但是注解就彻彻底底把这个过程都帮我们省略掉了，当然在创建第三方`bean`的时候还是写了`new`的过程，但是传值就不需要了，把`new`后的对象交给容器去注入。
+  7. 你可以想象在主方法里写一大堆的`new`以及各种注入（变量、`setXxx`、构造）操作，还不如统一到配置文件里，或者说就不需要，让容器去完成就好了。
+
+以上的理解都可以用底下文章中的一句话解决：**将组件的创建➕配置与组件的使用相分离**。
+
+```java
 // 此前开发
 public class UserDaoImpl {
+    // 定义成员变量的同时进行赋值:
     HikariConfig config = new HikariConfig();
     DataSource dataSource = new HikariDataSource(config);
     public void register() {
@@ -20,10 +30,11 @@ public class UserDaoImpl {
         }
     }
 }
+
 // 后来开发
 public class UserDaoImpl {
     DataSource dataSource;
-
+    // 定义好成员变量然后通过SET方法进行实例赋值:
     public void setDataSource(DataSource dataSource) {
         this.dataSource = dataSource;
     }
@@ -36,6 +47,7 @@ public class UserDaoImpl {
 }
 public class Main {
     public static void main(String[] args) {
+        // 在主方法中进行各种实例化操作以及注入操作:
         HikariConfig config = new HikariConfig();
         DataSource dataSource = new HikariDataSource(config);
         UserDaoImpl userDao = new UserDaoImpl();
@@ -43,6 +55,7 @@ public class Main {
         userDao.register();
     }
 }
+
 // 借助框架开发
 public class UserDaoImpl {
     DataSource dataSource;
@@ -59,21 +72,11 @@ public class UserDaoImpl {
 }
 public class Main {
     public static void main(String[] args) {
+        // 实例化以及注入操作都交由容器来完成，我们直接获取实例，然后进行业务逻辑调用即可:
         UserDaoImpl userDao = context.getBean(UserDaoImpl.class);
         userDao.register();
     }
 }
-```
-
-```Java
-// IoC容器把以下的这些大致过程都帮助我们实现好了
-User user = new User(24);
-user.age = 24;
-user.setAge(24);
-Dog dog = new Dog();
-user.setDog(dog);
-// 我们直接获取到实例，然后调用业务逻辑即可
-user.walkWithDog();
 ```
 
 ## IoC原理
@@ -166,7 +169,7 @@ public class BookService {
 
   1. BookService不再关心如何创建DataSource，因此，不必编写读取数据库配置之类的代码；
   2. DataSource实例被注入到BookService，同样也可以注入到UserService，因此，共享一个组件非常简单；
-  3. 测试BookService更容易，因为注入的是DataSource，测试时可以使用内存数据库，而不是真实的MySQL配置。
+  3. 测试BookService更容易，因为注入的是DataSource，**测试时可以使用内存数据库，而不是真实的MySQL配置**。
 
 因此，IoC又称为依赖注入（DI：Dependency Injection），它解决了一个最主要的问题：**将组件的创建➕配置与组件的使用相分离**，并且，由IoC容器负责管理组件的生命周期。
 
@@ -186,6 +189,8 @@ public class BookService {
 
 上述XML配置文件指示IoC容器创建3个JavaBean组件，并把id为dataSource的组件通过属性dataSource（即调用setDataSource()方法）注入到另外两个组件中。在Spring的IoC容器中，我们把所有**组件**统称为**JavaBean**，即**配置一个组件**就是**配置一个Bean**。
 
+### 依赖注入方式
+
 我们从上面的代码可以看到，依赖注入可以通过set()方法实现。但依赖注入也可以通过构造方法实现。很多Java类都具有带参数的构造方法，如果我们把BookService改造为通过构造方法注入，那么实现代码如下：
 
 ```Java
@@ -200,6 +205,8 @@ public class BookService {
 
 Spring的IoC容器同时支持属性注入和构造方法注入，并允许混合使用。
 
+### 无侵入容器
+
 在设计上，Spring的IoC容器是一个高度可扩展的**无侵入容器**。所谓无侵入，是指应用程序的组件无需实现Spring的特定接口，或者说，组件根本不知道自己在Spring的容器中运行。这种无侵入的设计有以下好处：
 
   1. 应用程序组件既可以在Spring的IoC容器中运行，也可以自己编写代码自行组装配置；
@@ -207,11 +214,13 @@ Spring的IoC容器同时支持属性注入和构造方法注入，并允许混�
 
 ## 装配Bean
 
+为什么要使用Spring的IoC容器，因为让容器来为我们创建并装配Bean能获得很大的好处，那么到底如何使用IoC容器？装配好的Bean又如何使用？
+
 <img src="./image/装配bean-工程结构.jpg">
 
-我们用Maven创建工程并引入spring-context依赖。
+我们用Maven创建工程并引入`spring-context`依赖。
 
-```Java
+```java
 // 编写一个MailService，用于在用户登录和注册成功后发送邮件通知。
 public class MailService {
     private ZoneId zoneId = ZoneId.systemDefault();
@@ -225,16 +234,13 @@ public class MailService {
     }
 
     public void sendLoginMail(User user) {
-        System.err.println(String.format("Hi, %s! You are Logged in at %s.", user.getName(), this.getTime()));
+        System.err.printf("Hi, %s! You are logged in at %s%n", user.getName(), this.getTime());
     }
 
     public void sendRegistrationMail(User user) {
-        System.err.println(String.format("Welcome, %s!", user.getName()));
+        System.err.printf("Welcome, %s!%n", user.getName());
     }
 }
-```
-
-```Java
 // 编写一个UserService，实现用户注册和登录。
 public class UserService {
     private MailService mailService;
@@ -243,10 +249,10 @@ public class UserService {
         this.mailService = mailService;
     }
 
-    private List<User> users = new ArrayList<>(List.of( // users:
-            new User(1, "bob@example.com", "password", "Bob"), // bob
-            new User(2, "alice@example.com", "password", "Alice"), // alice
-            new User(3, "tom@example.com", "password", "Tom"))); // tom
+    private List<User> users = new ArrayList<>(List.of(
+            new User(1, "bob@example.com", "password", "Bob"),
+            new User(2, "alice@example.com", "password", "Alice"),
+            new User(3, "tom@example.com", "password", "Tom")));
 
     public User login(String email, String password) {
         for (User user : users) {
@@ -268,7 +274,7 @@ public class UserService {
                 throw new RuntimeException("email exist.");
             }
         });
-        User user = new User(users.stream().mapToLong(u -> u.getId()).max().orElse(0L) + 1, email, password, name);
+        User user = new User(users.stream().mapToLong(User::getId).max().orElse(0L) + 1, email, password, name);
         users.add(user);
         mailService.sendRegistrationMail(user);
         return user;
@@ -276,27 +282,28 @@ public class UserService {
 }
 ```
 
-```XML
+```xml
 <!-- 编写一个特定的application.xml配置文件，告诉Spring的IoC容器应该如何创建并组装Bean。 -->
 <?xml version="1.0" encoding="UTF-8"?>
 <beans xmlns="http://www.springframework.org/schema/beans"
        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
        xsi:schemaLocation="http://www.springframework.org/schema/beans
         https://www.springframework.org/schema/beans/spring-beans.xsd">
-
+    <!-- 告诉Spring的IoC容器创建一个userServiceBean，并将mailServiceBean组装进来。 -->
     <bean id="userService" class="com.cat.service.UserService">
         <property name="mailService" ref="mailService"/>
     </bean>
-
+    <!-- 告诉Spring的IoC容器创建一个mailServiceBean。 -->
     <bean id="mailService" class="com.cat.service.MailService"/>
+
 </beans>
 ```
 
-- 每个`<bean ...>`都有一个id标识，相当于Bean的唯一ID；
+- 每个`<bean ...>`都有一个`id`标识，相当于Bean的唯一ID；
 - 在userServiceBean中，通过`<property name="..." ref="..." />`注入了另一个Bean；
 - **Bean的顺序不重要**，Spring根据依赖关系会自动正确初始化。
 
-```Java
+```java
 // 把上述XML配置文件用Java代码写出来，就像这样。
 UserService userService = new UserService();
 MailService mailService = new MailService();
@@ -305,7 +312,7 @@ userService.setMailService(mailService);
 
 **只不过Spring容器是通过读取XML文件后使用反射完成的**。
 
-```XML
+```xml
 <!-- 如果注入的不是Bean，而是boolean、int、String这样的数据类型，则通过value注入，例如，创建一个HikariDataSource。 -->
 <bean id="dataSource" class="com.zaxxer.hikari.HikariDataSource">
     <property name="jdbcUrl" value="jdbc:mysql://localhost:3306/test" />
@@ -319,9 +326,6 @@ userService.setMailService(mailService);
 ```Java
 // 最后一步，我们需要创建一个Spring的IoC容器实例，然后加载配置文件，让Spring容器为我们创建并装配好配置文件中指定的所有Bean，这只需要一行代码。
 ApplicationContext context = new ClassPathXmlApplicationContext("application.xml");
-```
-
-```Java
 // 接下来，我们就可以从Spring容器中“取出”装配好的Bean然后使用它。
 // 获取Bean:
 UserService userService = context.getBean(UserService.class);
@@ -329,9 +333,11 @@ UserService userService = context.getBean(UserService.class);
 User user = userService.login("bob@example.com", "password");
 ```
 
-可以看到，Spring容器就是ApplicationContext，它是一个接口，有很多实现类，这里我们选择ClassPathXmlApplicationContext，表示它会自动从classpath中查找指定的XML配置文件。
+### ApplicationContext
 
-获得了ApplicationContext的实例，就获得了IoC容器的引用。从ApplicationContext中我们可以根据Bean的ID获取Bean，但更多的时候我们**根据Bean的类型获取Bean的引用**。
+可以看到，Spring容器就是ApplicationContext，它是一个接口，有很多实现类，这里我们选择`ClassPathXmlApplicationContext`，表示它会自动从classpath中查找指定的XML配置文件。
+
+获得了ApplicationContext的实例，就获得了IoC容器的引用。从ApplicationContext中我们可以根据Bean的ID获取Bean，但更多的时候我们**根据Bean的Class类型获取Bean的引用**。
 
 ```Java
 // Spring还提供另一种IoC容器叫BeanFactory，使用方式和ApplicationContext类似。
@@ -339,7 +345,7 @@ BeanFactory factory = new XmlBeanFactory(new ClassPathResource("application.xml"
 MailService mailService = factory.getBean(MailService.class);
 ```
 
-BeanFactory和ApplicationContext的区别在于，BeanFactory的实现是按需创建，即第一次获取Bean时才创建这个Bean，而ApplicationContext会一次性创建所有的Bean。实际上，ApplicationContext接口是从BeanFactory接口继承而来的，并且，ApplicationContext提供了一些额外的功能，包括国际化支持、事件和通知机制等。**通常情况下，我们总是使用ApplicationContext，很少会考虑使用BeanFactory**。按需创建的时候，发现依赖有问题再报个错，还不如启动就报错。
+BeanFactory和ApplicationContext的区别在于，BeanFactory的实现是按需创建，即第一次获取Bean时才创建这个Bean，而ApplicationContext会一次性创建所有的Bean。实际上，ApplicationContext接口是从BeanFactory接口继承而来的，并且，ApplicationContext提供了一些额外的功能，包括国际化支持、事件和通知机制等。**通常情况下，我们总是使用ApplicationContext，很少会考虑使用BeanFactory**。因为按需创建的时候，发现依赖有问题再报个错，还不如启动就报错。
 
 ## 使用Annotation配置
 
