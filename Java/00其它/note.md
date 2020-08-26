@@ -1,5 +1,9 @@
 # 记录
 
+## 使用数据库时报错没有合适的驱动
+
+`No suitable driver`，请检查是否导入了对应的`mysql-connector-java`包。
+
 ## 路径映射问题
 
 ```java

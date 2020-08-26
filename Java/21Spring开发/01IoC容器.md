@@ -214,6 +214,8 @@ Spring的IoC容器同时支持属性注入和构造方法注入，并允许混�
 
 ## 装配Bean
 
+> 如果成员变量没有注入成功，首先检查是否有对应的setXxx()方法，然后检查XML文件中是否有将对应的JavaBean作为属性传入。
+
 为什么要使用Spring的IoC容器，因为让容器来为我们创建并装配Bean能获得很大的好处，那么到底如何使用IoC容器？装配好的Bean又如何使用？
 
 <img src="./image/装配bean-工程结构.jpg">
@@ -311,6 +313,16 @@ userService.setMailService(mailService);
 ```
 
 **只不过Spring容器是通过读取XML文件后使用反射完成的**。
+
+```java
+// 利用反射完成大致类似于这样:
+Class<?> cls1 = Class.forName("com.cat.reflection.MailService");
+Class<?> cls2 = Class.forName("com.cat.reflection.UserService");
+MailService mailService = (MailService) cls1.getDeclaredConstructor().newInstance();
+UserService userService = (UserService) cls2.getDeclaredConstructor().newInstance();
+userService.setMailService(mailService);
+System.out.println("OK");
+```
 
 ```xml
 <!-- 如果注入的不是Bean，而是boolean、int、String这样的数据类型，则通过value注入，例如，创建一个HikariDataSource。 -->

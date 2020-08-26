@@ -19,7 +19,7 @@
 docker pull redis:latest
 # 运行容器，6379:6379表示映射容器服务的6379端口到宿主机的6379端口。外部可以直接通过宿主机IP:6379 访问到容器中的Redis服务。
 docker run -itd --name redis-test -p 6379:6379 redis
-# 执行/bin/bash打开Linux系统的shell界面
+# 运行/bin/bash程序打开Linux系统的shell界面
 docker exec -it redis-test /bin/bash
 ```
 
