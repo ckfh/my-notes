@@ -1,5 +1,9 @@
 # 记录
 
+## Spring容器注入报错方式
+
+`NullPointerException`没有注入到字段，`NoSuchBeanDefinitionException`找不到实例注入字段。
+
 ## 使用数据库时报错没有合适的驱动
 
 `No suitable driver`，请检查是否导入了对应的`mysql-connector-java`包。
