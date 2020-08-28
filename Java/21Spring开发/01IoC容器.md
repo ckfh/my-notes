@@ -749,38 +749,39 @@ public class ZoneIdFactoryBean implements FactoryBean<ZoneId> {
 
 因此，**如果定义了一个FactoryBean，要注意Spring创建的Bean实际上是这个FactoryBean的getObject()方法返回的Bean**。为了和普通Bean区分，我们通常都以XxxFactoryBean命名。
 
-关于在什么时候选择使用FactoryBean，可参考[掘金](https://www.jianshu.com/p/6f0a59623090)。简单来说就是涉及到复杂bean的创建时，我们可以考虑使用FactoryBean。
+关于在什么时候选择使用FactoryBean，可参考[掘金](https://www.jianshu.com/p/6f0a59623090)。简单来说就是涉及到**复杂bean的创建**时，我们可以考虑使用FactoryBean。
 
 ## 使用Resource
 
-> Value
+> Value("1")/Value("classpath:/...")/Value("file:...")
 
-在Java程序中，我们经常会读取配置文件、资源文件等。使用Spring容器时，我们也可以把“文件”注入进来，方便程序读取。
+在Java程序中，我们经常会读取配置文件、资源文件等。使用Spring容器时，**我们也可以把“文件”注入进来，方便程序读取**。
 
-例如，AppService需要读取logo.txt这个文件，通常情况下，我们需要写很多繁琐的代码，主要是为了定位文件，打开InputStream。
+例如，AppService需要读取logo.txt这个文件，通常情况下，**我们需要写很多繁琐的代码，主要是为了定位文件，打开InputStream**。
 
-Spring提供了一个org.springframework.core.io.Resource（注意不是javax.annotation.Resource），它可以像String、int一样使用@Value注入。
+Spring提供了一个`org.springframework.core.io.Resource`（注意不是javax.annotation.Resource），它可以像String、int一样使用@Value注入。
 
 ```Java
-import org.springframework.core.io.Resource;
-
 @Component
 public class AppService {
+    @Value("1")
+    private int version;
+
     @Value("classpath:/logo.txt")
     private Resource resource;
+
     private String logo;
 
     @PostConstruct
     public void init() throws IOException {
-        InputStream in;
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(this.resource.getInputStream(), StandardCharsets.UTF_8))) {
+        try (var reader = new BufferedReader(new InputStreamReader(resource.getInputStream(), StandardCharsets.UTF_8))) {
             this.logo = reader.lines().collect(Collectors.joining("\n"));
         }
     }
 }
 ```
 
-注入Resource最常用的方式是通过classpath，即类似classpath:/logo.txt表示在classpath中搜索logo.txt文件，然后，我们直接调用Resource.getInputStream()就可以获取到输入流，**避免了自己搜索文件的代码**。
+注入Resource最常用的方式是通过classpath，即类似`classpath:/logo.txt`表示在classpath中搜索logo.txt文件，然后，我们直接调用Resource.getInputStream()就可以获取到输入流，**避免了自己搜索文件的代码**。
 
 也可以直接指定文件的路径，例如：
 
@@ -789,17 +790,55 @@ public class AppService {
 private Resource resource;
 ```
 
-但使用classpath是最简单的方式。使用Maven的标准目录结构，所有资源文件放入src/main/resources即可。
+但使用classpath是最简单的方式。
+
+使用Maven的标准目录结构，所有资源文件放入`src/main/resources`即可。
+
+使用Spring的Resource注入app.properties文件，然后读取该配置文件：
+
+```java
+@Component
+public class AppService {
+    @Value("classpath:/logo.txt")
+    private Resource resource;
+
+    private String logo;
+
+    @Value("classpath:/app.properties")
+    private Resource properties;
+
+    private String name;
+    private String version;
+
+    @PostConstruct
+    public void init() throws IOException {
+        try (var reader = new BufferedReader(new InputStreamReader(resource.getInputStream(), StandardCharsets.UTF_8))) {
+            this.logo = reader.lines().collect(Collectors.joining("\n"));
+        }
+        try (var input = properties.getInputStream()) {
+            Properties prop = new Properties();
+            // 将Resource对象提供的输入流传递给Properties对象，可以便捷地读取xxx.properties文件:
+            prop.load(input);
+            name = prop.getProperty("app.name", "Cannot fetch the property [app.name]");
+            version = prop.getProperty("app.version", "Cannot fetch the property [app.version]");
+        }
+    }
+}
+```
 
 ## 注入配置
 
-> PropertySource
+> PropertySource("classpath:/...")/Value("${...}")/Value("#{...}")
+
+- Spring容器可以通过@PropertySource自动读取配置，并以@Value("${key}")的形式注入；
+- 可以通过${key:defaultValue}指定默认值；
+- 以#{bean.property}形式注入时，Spring容器自动把指定Bean的指定属性值注入。
 
 在开发应用程序时，经常需要读取配置文件。最常用的配置方法是以key=value的形式写在.properties文件中。
 
-例如，MailService根据配置的app.zone=Asia/Shanghai来决定使用哪个时区。要读取配置文件，我们可以使用上一节讲到的Resource来读取位于classpath下的一个app.properties文件。但是，这样仍然比较繁琐。
+例如，MailService根据配置的app.zone=Asia/Shanghai来决定使用哪个时区。要读取配置文件，我们可以使用上一节讲到的Resource来读取位于classpath下的一个app.properties文件。但是，这样仍然比较繁琐。因为后续需要将输入流传递给Properties对象，再利用Properties对象提供的方法读取到指定key的value，最后赋值给成员变量。
 
-Spring容器还提供了一个更简单的@PropertySource来自动读取配置文件。我们只需要在@Configuration配置类上再添加一个注解。
+Spring容器还提供了一个更简单的@PropertySource来自动读取配置文件。我们只需要在@Configuration配置类上再添加一个注解：
 
 ```Java
 @Configuration
@@ -816,17 +855,23 @@ public class AppConfig {
 }
 ```
 
-Spring容器看到@PropertySource("app.properties")注解后，自动读取这个配置文件，然后，我们使用@Value正常注入。
+**在配置类当中被读取到的配置文件，可以在任意的JavaBean中进行访问，不需要重复读取，统一在主配置类中读取一目了然**。
+
+Spring容器看到@PropertySource("app.properties")注解后，自动读取这个配置文件，然后，我们使用@Value正常注入：
 
 ```Java
 @Value("${app.zone:Z}")
 String zoneId;
 ```
 
-注意注入的字符串语法，它的格式如下："${app.zone}"表示读取key为app.zone的value，如果key不存在，启动将报错；"${app.zone:Z}"表示读取key为app.zone的value，但如果key不存在，就使用默认值Z。这样一来，我们就可以根据app.zone的配置来创建ZoneId。
+注意注入的字符串语法，它的格式如下：
+
+- "${app.zone}"表示读取key为app.zone的value，如果key不存在，启动将报错；
+- "${app.zone:Z}"表示读取key为app.zone的value，但如果key不存在，就使用默认值Z。这样一来，我们就可以根据app.zone的配置来创建ZoneId。
+
+还可以把注入的注解写到方法参数中：
 
 ```Java
-// 还可以把注入的注解写到方法参数中。
 @Bean
 ZoneId createZoneId(@Value("${app.zone:Z}") String zoneId) {
     return ZoneId.of(zoneId);
@@ -835,7 +880,7 @@ ZoneId createZoneId(@Value("${app.zone:Z}") String zoneId) {
 
 可见，先使用@PropertySource读取配置文件，然后通过@Value以${key:defaultValue}的形式注入，可以极大地简化读取配置的麻烦。
 
-另一种注入配置的方式是先通过一个简单的JavaBean**持有所有的配置**。
+另一种注入配置的方式是先通过一个简单的JavaBean**持有某个配置文件的所有配置**，例如，一个SmtpConfig：
 
 ```Java
 @Component
@@ -857,7 +902,7 @@ public class SmtpConfig {
 }
 ```
 
-然后，在需要读取的地方，使用#{smtpConfig.host}注入。
+然后，在需要读取的地方，使用#{smtpConfig.host}注入：
 
 ```Java
 @Component
@@ -870,9 +915,11 @@ public class MailService {
 }
 ```
 
-注意观察#{}这种注入语法，它和${key}不同的是，#{}表示从JavaBean读取属性。"#{smtpConfig.host}"的意思是，从名称为smtpConfig的Bean读取host属性，即调用getHost()方法。一个Class名为SmtpConfig的Bean，它在Spring容器中的默认名称就是smtpConfig，除非用@Qualifier指定了名称。
+实际上此处可以使用`@Autowired`注入SmtpConfig，然后调用getXxx()方法，当然实际怎么注入，具体问题具体分析。
 
-使用一个独立的JavaBean持有所有属性，然后在其它Bean中以#{bean.property}注入的好处是，多个Bean都可以引用同一个Bean的某个属性。例如，如果SmtpConfig决定从数据库中读取相关配置项，那么MailService注入的@Value("#{smtpConfig.host}")仍然可以不修改正常运行。
+**注意观察#{}这种注入语法，它和${key}不同的是，#{}表示从JavaBean读取属性**。"#{smtpConfig.host}"的意思是，从名称为smtpConfig的Bean读取host属性，即调用getHost()方法。一个Class名为SmtpConfig的Bean，它在Spring容器中的默认名称就是smtpConfig，除非用@Qualifier指定了名称。
+
+使用一个独立的JavaBean持有所有属性，然后在其它Bean中以#{bean.property}注入的好处是，**多个Bean都可以引用同一个Bean的某个属性**。例如，如果SmtpConfig决定从数据库中读取相关配置项，那么MailService注入的@Value("#{smtpConfig.host}")仍然可以不修改正常运行。
 
 ## 使用条件装配
 
