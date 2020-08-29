@@ -753,7 +753,7 @@ public class ZoneIdFactoryBean implements FactoryBean<ZoneId> {
 
 ## 使用Resource
 
-> Value("1")/Value("classpath:/...")/Value("file:...")
+> Value("1")/Value("classpath:/...")/Value("file:...")，避免了自己搜索文件的代码。
 
 在Java程序中，我们经常会读取配置文件、资源文件等。使用Spring容器时，**我们也可以把“文件”注入进来，方便程序读取**。
 
@@ -828,15 +828,15 @@ public class AppService {
 
 ## 注入配置
 
-> PropertySource("classpath:/...")/Value("${...}")/Value("#{...}")
+> PropertySource("classpath:/...")/Value("${...}")/Value("#{...}")，既避免了自己搜索文件的代码，还能快速导入配置文件中的配置选项。
 
 - Spring容器可以通过@PropertySource自动读取配置，并以@Value("${key}")的形式注入；
 - 可以通过${key:defaultValue}指定默认值；
 - 以#{bean.property}形式注入时，Spring容器自动把指定Bean的指定属性值注入。
 
-在开发应用程序时，经常需要读取配置文件。最常用的配置方法是以key=value的形式写在.properties文件中。
+**在开发应用程序时，经常需要读取配置文件。最常用的配置方法是以key=value的形式写在.properties文件中**。
 
-例如，MailService根据配置的app.zone=Asia/Shanghai来决定使用哪个时区。要读取配置文件，我们可以使用上一节讲到的Resource来读取位于classpath下的一个app.properties文件。但是，这样仍然比较繁琐。因为后续需要将输入流传递给Properties对象，再利用Properties对象提供的方法读取到指定key的value，最后赋值给成员变量。
+例如，MailService根据配置的app.zone=Asia/Shanghai来决定使用哪个时区。要读取配置文件，我们可以使用上一节讲到的Resource来读取位于classpath下的一个app.properties文件。但是，这样仍然比较繁琐。**因为后续需要将输入流传递给Properties对象，再利用Properties对象提供的方法读取到指定key的value，最后赋值给成员变量**。
 
 Spring容器还提供了一个更简单的@PropertySource来自动读取配置文件。我们只需要在@Configuration配置类上再添加一个注解：
 
@@ -923,13 +923,11 @@ public class MailService {
 
 ## 使用条件装配
 
-> Profile/Conditional
-
 开发应用程序时，我们会使用开发环境，例如，使用内存数据库以便快速启动。而运行在生产环境时，我们会使用生产环境，例如，使用MySQL数据库。**如果应用程序可以根据自身的环境做一些适配，无疑会更加灵活**。
 
-Spring为应用程序准备了Profile这一概念，用来表示不同的环境。例如，我们分别定义开发、测试和生产这3个环境：native；test；production。
+**Spring为应用程序准备了Profile这一概念，用来表示不同的环境**。例如，我们分别定义开发、测试和生产这3个环境：native；test；production。
 
-创建某个Bean时，Spring容器可以根据注解@Profile来决定是否创建。如果当前的Profile设置为test，则Spring容器会调用createZoneIdForTest()创建ZoneId，否则，调用createZoneId()创建ZoneId。注意到@Profile("!test")表示非test环境。在运行程序时，加上JVM参数-Dspring.profiles.active=test就可以指定以test环境启动。
+创建某个Bean时，Spring容器可以根据注解@Profile来决定是否创建。例如，以下配置：
 
 ```Java
 @Configuration
@@ -949,7 +947,19 @@ public class AppConfig {
 }
 ```
 
-实际上，Spring允许指定多个Profile，例如：-Dspring.profiles.active=test,master。可以表示test环境，并使用master分支代码。要满足多个Profile条件，可以这样写。
+如果当前的Profile设置为test，则Spring容器会调用createZoneIdForTest()创建ZoneId，否则，调用createZoneId()创建ZoneId。注意到@Profile("!test")表示非test环境。
+
+在运行程序时，加上JVM参数`-Dspring.profiles.active=test`就可以指定以test环境启动。
+
+实际上，Spring允许指定多个Profile，例如：
+
+```text
+-Dspring.profiles.active=test,master
+```
+
+可以表示test环境，并使用master分支代码。
+
+要满足多个Profile条件，可以这样写：
 
 ```Java
 @Bean
@@ -959,11 +969,13 @@ ZoneId createZoneId() {
 }
 ```
 
-除了根据@Profile条件来决定是否创建某个Bean外，Spring还可以根据@Conditional配合环境变量决定是否创建某个Bean。
+### 使用Conditional
+
+除了根据@Profile条件来决定是否创建某个Bean外，**Spring还可以根据@Conditional配合环境变量决定是否创建某个Bean**。
 
 ```Java
-// 它的意思是，如果满足OnSmtpEnvCondition的条件，才会创建SmtpMailService这个Bean。
 @Component
+// 它的意思是，如果满足OnSmtpEnvCondition的条件，才会创建SmtpMailService这个Bean。
 @Conditional(OnSmtpEnvCondition.class)
 public class SmtpMailService implements MailService {
     ...
@@ -976,7 +988,9 @@ public class OnSmtpEnvCondition implements Condition {
 }
 ```
 
-Spring只提供了@Conditional注解，**具体判断逻辑还需要我们自己实现**。Spring Boot提供了更多使用起来更简单的条件注解。
+**Spring只提供了`@Conditional`注解，具体判断逻辑还需要我们自己实现**。
+
+Spring Boot提供了更多使用起来更简单的条件注解。
 
 ```Java
 // 如果配置文件中存在app.smtp=true，则创建MailService：
@@ -991,13 +1005,16 @@ public class MailService {
 public class MailService {
     ...
 }
-// 我们以文件存储为例，假设我们需要保存用户上传的头像，并返回存储路径，在本地开发运行时，我们总是存储到文件：
+```
+
+```java
+// 我们以文件存储为例，假设我们需要保存用户上传的头像，并返回存储路径，在本地开发运行时，我们创建FileUploader存储到文件：
 @Component
 @ConditionalOnProperty(name = "app.storage", havingValue = "file", matchIfMissing = true)
 public class FileUploader implements Uploader {
     ...
 }
-// 在生产环境运行时，我们会把文件存储到类似AWS S3上：
+// 在生产环境运行时，我们创建S3Uploader把文件存储到类似AWS S3上：
 @Component
 @ConditionalOnProperty(name = "app.storage", havingValue = "s3")
 public class S3Uploader implements Uploader {
@@ -1009,7 +1026,6 @@ public class UserImageService {
     @Autowired
     Uploader uploader;
 }
-// 当应用程序检测到配置文件存在app.storage=s3时，自动使用S3Uploader，如果存在配置app.storage=file，或者配置app.storage不存在，则使用FileUploader。
 ```
 
-使用条件注解，能更灵活地装配Bean；Spring允许通过@Profile配置不同的Bean；Spring还提供了@Conditional来进行条件装配，Spring Boot在此基础上进一步提供了基于配置、Class、Bean等条件进行装配。
+当应用程序检测到配置文件存在app.storage=s3时，自动使用S3Uploader，如果存在配置app.storage=file，或者配置app.storage不存在（`matchIfMissing`），则使用FileUploader。
