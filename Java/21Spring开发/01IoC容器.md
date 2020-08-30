@@ -749,7 +749,7 @@ public class ZoneIdFactoryBean implements FactoryBean<ZoneId> {
 
 因此，**如果定义了一个FactoryBean，要注意Spring创建的Bean实际上是这个FactoryBean的getObject()方法返回的Bean**。为了和普通Bean区分，我们通常都以XxxFactoryBean命名。
 
-关于在什么时候选择使用FactoryBean，可参考[掘金](https://www.jianshu.com/p/6f0a59623090)。简单来说就是涉及到**复杂bean的创建**时，我们可以考虑使用FactoryBean。
+关于在什么时候选择使用FactoryBean，可参考[简书](https://www.jianshu.com/p/6f0a59623090)。简单来说就是涉及到**复杂第三方bean的创建**时，我们可以考虑使用FactoryBean。
 
 ## 使用Resource
 
@@ -990,7 +990,11 @@ public class OnSmtpEnvCondition implements Condition {
 
 **Spring只提供了`@Conditional`注解，具体判断逻辑还需要我们自己实现**。
 
-Spring Boot提供了更多使用起来更简单的条件注解。
+使用IDEA设置启动参数和环境变量进行项目调试。
+
+<img src="./image/启动参数和环境变量.png">
+
+Spring Boot提供了更多使用起来更简单的条件注解，**直接在注解当中实现了判断逻辑**。
 
 ```Java
 // 如果配置文件中存在app.smtp=true，则创建MailService：
