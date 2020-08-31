@@ -828,7 +828,7 @@ public class AppService {
 
 ## 注入配置
 
-> PropertySource("classpath:/...")/Value("${...}")/Value("#{...}")，既避免了自己搜索文件的代码，还能快速导入配置文件中的配置选项。
+> PropertySource("classpath:/...")/Value("${...}")/Value("#{...}")，既避免了自己搜索文件的代码，还能快速导入.properties类型的配置文件中的配置选项。
 
 - Spring容器可以通过@PropertySource自动读取配置，并以@Value("${key}")的形式注入；
 - 可以通过${key:defaultValue}指定默认值；
