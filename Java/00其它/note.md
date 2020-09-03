@@ -1,5 +1,9 @@
 # 记录
 
+## 一个不知道有没有用的笔记
+
+ResultSet.getRow()方法它返回的不是数据表中的行号，而是当前返回的数据集中的行号，第一条记录行号为1，第二条记录行号为2，依此类推；而在JdbcTemplate中接触到的函数式接口RowMapper的mapRow(ResultSet rs, int rowNum)方法参数当中的行号是从0开始的，当然你依旧从ResultSet对象中获取行号那还是从1开始的。
+
 ## Spring容器注入报错方式
 
 `NullPointerException`没有注入到字段，`NoSuchBeanDefinitionException`找不到实例注入字段。
