@@ -70,6 +70,14 @@ try (PreparedStatement ps = conn.prepareStatement("DELETE FROM students WHERE id
 
 ## 事务
 
+> When a connection is created, it is in auto-commit mode. This means that each individual SQL statement is treated as a transaction and is automatically committed right after it is executed. (To be more precise, the default is for a SQL statement to be committed when it is completed, not when it is executed. A statement is completed when all of its result sets and update counts have been retrieved. In almost all cases, however, a statement is completed, and therefore committed, right after it is executed.)
+
+创建连接时，它处于自动提交模式。**这意味着每个独立的SQL语句都被视为一个事务，并在执行后立即自动提交**。（更确切地说，默认情况下，SQL语句在完成时提交，而不是在执行时提交。当检索了语句的所有结果集和更新技术后，语句就完成了。然而，在几乎所有情况下，语句都是在执行之后立即完成并提交的。）
+
+> A transaction is a set of one or more statements that is executed as a unit, so either all of the statements are executed, or none of the statements is executed.
+
+事务是作为一个单元执行的一条或多条语句的集合，因此要么执行所有语句，要么不执行任何语句。
+
 ```Java
 Connection conn = openConnection();
 try {
