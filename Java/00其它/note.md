@@ -1,5 +1,42 @@
 # 记录
 
+## 面向接口编程的威力
+
+```java
+package javax.sql;
+
+public interface DataSource  extends CommonDataSource, Wrapper {
+    ...
+    Connection getConnection() throws SQLException;
+    ...
+}
+```
+
+```java
+package com.zaxxer.hikari;
+
+public class HikariDataSource extends HikariConfig implements DataSource, Closeable {
+    ...
+    @Override
+    public Connection getConnection() throws SQLException
+    {
+        ...
+    }
+    ...
+}
+```
+
+```java
+// 我们在编码时只需要引用接口:
+public Connection getConnection(DataSource ds) {
+    return ds.getConnection();
+}
+// 从hikari连接池中获取连接:
+Connection conn = getConnection(new HikariDataSource());
+// 从c3p0连接池中获取连接:
+Connection conn = getConnection(new c3p0());
+```
+
 ## 一个不知道有没有用的笔记
 
 ResultSet.getRow()方法它返回的不是数据表中的行号，而是当前返回的数据集中的行号，第一条记录行号为1，第二条记录行号为2，依此类推；而在JdbcTemplate中接触到的函数式接口RowMapper的mapRow(ResultSet rs, int rowNum)方法参数当中的行号是从0开始的，当然你依旧从ResultSet对象中获取行号那还是从1开始的。
