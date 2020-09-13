@@ -2,6 +2,8 @@
 
 泛型是一种“代码模板”，可以用一套代码**套用各种类型**。
 
+支持泛型的同时，可以避免强制转型。
+
 ## 什么是泛型
 
 在Java标准库中的`ArrayList<T>`实现了`List<T>`接口，它可以向上转型为`List<T>`，即类型`ArrayList<T>`可以向上转型为`List<T>`。但是，不能把`ArrayList<Integer>`向上转型为`ArrayList<Number>`或`List<Number>`。
