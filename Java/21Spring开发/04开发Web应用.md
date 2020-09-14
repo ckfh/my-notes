@@ -17,7 +17,7 @@ Java Web的基础：Servlet容器，以及标准的Servlet组件：
 
 现在是Web应用程序，而Web应用程序总是由Servlet容器创建，那么，Spring容器应该由谁创建？在什么时候创建？Spring容器中的Controller又是如何通过Servlet调用的？
 
-早期的Servlet需要在web.xml中配置映射路径，但最新Servlet版本只需要通过注解就可以完成映射。
+早期的Servlet需要在web.xml中配置映射路径，但最新Servlet版本只需要通过注解就可以完成路径映射。
 
 我们在web.xml中配置Spring MVC提供的DispatcherServlet：
 
