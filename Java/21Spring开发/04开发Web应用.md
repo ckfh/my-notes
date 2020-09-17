@@ -50,7 +50,7 @@ Java Web的基础：Servlet容器，以及标准的Servlet组件：
 </web-app>
 ```
 
-初始化参数contextClass指定使用注解配置的AnnotationConfigWebApplicationContext，配置文件的位置参数contextConfigLocation指向AppConfig的完整类名，最后，把这个Servlet映射到/*，即处理所有URL。
+初始化参数`contextClass`指定使用注解配置的`AnnotationConfigWebApplicationContext`，配置文件的位置参数`contextConfigLocation`指向`AppConfig`的完整类名，最后，把这个Servlet映射到`/*`，即处理所有URL。
 
 **上述配置可以看作一个样板配置，有了这个配置，Servlet容器会首先初始化Spring MVC的DispatcherServlet，在DispatcherServlet启动时，它根据配置AppConfig创建了一个类型是WebApplicationContext的IoC容器，完成所有Bean的初始化，并将容器绑到ServletContext上**。
 
@@ -106,21 +106,25 @@ Java Web的基础：Servlet容器，以及标准的Servlet组件：
 
 - **实际方法的URL映射总是前缀+路径，这种形式还可以有效避免不小心导致的重复的URL映射**。
 
+在注册、登录等功能的基础上增加一个修改口令的页面：
+
+  1. 页面上有原始密码、新密码、重复密码三个文本框。
+  2. 处理GET请求的方法内部判断用户是否已登录，用户未登录则跳转至登录页面，已登录则返回修改口令的页面（渲染用户对象）。
+  3. 处理POST请求的方法内部首先判断原始密码是否正确，之后再判断重复密码和新密码是否一致，这两类操作如果不正确则返回页面（渲染用户对象和错误消息），最后修改用户密码，移除用户登录记录，跳转到登录页面。
+
 ## 使用REST
 
 <img src="./image/restful风格.png">
 
 <img src="./image/rest-通俗版.png">
 
-在Web应用中，除了需要使用MVC给用户显示页面外，还有一类API接口，我们称之为REST，通常**输入输出都是JSON**，便于第三方调用或者使用页面JavaScript与之交互。
+在Web应用中，除了需要使用MVC给用户显示页面外，还有一类API接口，我们称之为REST，通常输入输出都是JSON，**便于第三方调用或者使用页面JavaScript与之交互**。
 
 直接在Controller中处理JSON是可以的，因为Spring MVC的@GetMapping和@PostMapping都支持指定输入和输出的格式。如果我们想接收JSON，输出JSON，那么可以这样写：
 
 ```Java
 @Controller
 public class RestController {
-    final Logger logger = LoggerFactory.getLogger(getClass());
-
     @PostMapping(value = "/rest",
             consumes = "application/json;charset=UTF-8",
             produces = "application/json;charset=UTF-8")
@@ -173,7 +177,7 @@ public class ApiController {
         return this.userService.getUserById(id);
     }
     // POST /signin
-    // 注意此处反序列化为SignInRequest这个JavaBean
+    // 注意此处反序列化为下方定义的静态内部类SignInRequest这个JavaBean
     @PostMapping("/signin")
     public Map<String, Object> signin(@RequestBody SignInRequest signinRequest) {
         try {
@@ -203,7 +207,7 @@ public class ApiController {
 
 <img src="./image/rest-post-response.png">
 
-注意观察上述JSON的输出，User能被正确地序列化为JSON，但暴露了password属性，这是我们不期望的。要避免输出password属性，可以把User复制到另一个UserBean对象，该对象只持有必要的属性，但这样做比较繁琐。另一种简单的方法是直接在User的password属性定义处加上@JsonIgnore表示完全忽略该属性：
+注意观察上述JSON的输出，User能被正确地序列化为JSON，但暴露了password属性，这是我们不期望的。要避免输出password属性，可以把User复制到另一个UserBean对象，该对象只持有必要的属性，但这样做比较繁琐。另一种简单的方法是直接在User的password属性定义处加上@JsonIgnore表示**完全忽略该属性（输入时不会被赋值，输出时不会被转换所以前端展示时也不会被显示）**：
 
 ```Java
 public class User {
@@ -218,7 +222,7 @@ public class User {
 }
 ```
 
-但是这样一来，如果写一个register(User user)方法，那么该方法的User对象也拿不到注册时用户传入的密码了。如果要允许输入password，但不允许输出password，即在JSON序列化和反序列化时，允许写属性，禁用读属性，可以更精细地控制如下：
+但是这样一来，如果写一个register(User user)方法，那么该方法的User对象也拿不到注册时用户传入的密码了（密码字段的值为null）。如果要允许输入password，但不允许输出password，即在JSON序列化和反序列化时，允许写属性，禁用读属性，可以更精细地控制如下：
 
 ```Java
 public class User {
@@ -233,7 +237,7 @@ public class User {
 }
 ```
 
-<img src="./image/为什么.png">
+<img src="./image/静态内部类.png">
 
 ## 集成Filter
 
