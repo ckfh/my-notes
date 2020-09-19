@@ -241,14 +241,14 @@ public class User {
 
 ## 集成Filter
 
-简单地使用一个EncodingFilter，在全局范围类给HttpServletRequest和HttpServletResponse强制设置为UTF-8编码。
+简单地使用一个EncodingFilter，在全局范围内给HttpServletRequest和HttpServletResponse强制设置为UTF-8编码。
 
 可以自己编写一个EncodingFilter，也可以直接使用Spring MVC自带的一个CharacterEncodingFilter。配置Filter时，只需在web.xml中声明即可：
 
 ```XML
 <web-app>
     <display-name>Archetype Created Web Application</display-name>
-    <!-- 这是由Servlet容器实例化的一个WebFilter，只不过实例化的对象是由Spring框架提供的。 -->
+    <!-- 这是由Servlet容器实例化的一个WebFilter，只不过实例化的对象是由Spring框架直接提供的。 -->
     <filter>
         <filter-name>encodingFilter</filter-name>
         <filter-class>org.springframework.web.filter.CharacterEncodingFilter</filter-class>
@@ -273,11 +273,12 @@ public class User {
 
 因为这种Filter和我们业务关系不大，**注意到CharacterEncodingFilter其实和Spring的IoC容器没有任何关系，两者均互不知晓对方的存在（为何无关，请参考第一节）**，因此，配置这种Filter十分简单。
 
-**如果想要返回包含中文内容的JSON数据，最好指定请求头`Accept`为`application/json;charset=UTF-8`，以及使用`Map.of(k, v)`来携带JSON数据进行返回**。
+**如果想要返回包含中文内容的JSON数据，最好指定请求头`Accept`（用来表示请求发送方希望接收的数据类型）为`application/json;charset=UTF-8`，以及使用`Map.of(k, v)`来携带JSON数据进行返回**。
 
-再考虑这样一个问题：如果允许用户使用Basic模式进行用户验证，即在HTTP请求中添加头Authorization: Basic email:password，这个需求如何实现。编写一个AuthFilter是最简单的实现方式：
+再考虑这样一个问题：如果允许用户使用`Basic`模式进行用户验证，即在HTTP请求中添加头`Authorization: Basic email:password`，这个需求如何实现。编写一个AuthFilter是最简单的实现方式：
 
 ```Java
+// 注解是Spring的@Component注解不是Servlet的@WebFilter注解:
 @Component
 public class AuthFilter implements Filter {
     @Autowired
@@ -303,11 +304,13 @@ public class AuthFilter implements Filter {
 }
 ```
 
-在Spring中创建的这个AuthFilter是一个普通Bean，**Servlet容器并不知道它能作为Filter组件**，所以它不会起作用。在Web开发中，我们使用WebFilter注解一个Filter，然后由Web服务器来加载它，但在这里注解Component会使其WebFilter注解失效。**可以想象一下这个实例先后会被Web容器以及Spring容器初始化，这种初始化两次的逻辑应该是不允许的**。
+问题：在Spring中创建的这个AuthFilter是一个**普通Bean**，**Servlet容器并不知道它能作为Filter组件**，所以它不会起作用。
 
-**如果我们直接在web.xml中声明这个AuthFilter，注意到AuthFilter的实例将由Servlet容器而不是Spring容器初始化，因此，@Autowire根本不生效，用于登录的UserService成员变量永远是null**。
+**如果我们直接在web.xml中声明（如上述定义encodingFilter那样）这个AuthFilter，此时AuthFilter的实例将由Servlet容器而不是Spring容器初始化，因此，@Autowire根本不生效，用于登录的UserService成员变量永远是null**。
 
-所以，得通过一种方式，**让Servlet容器实例化的Filter，间接引用Spring容器实例化的AuthFilter**。Spring MVC提供了一个DelegatingFilterProxy，专门来干这个事情：
+在以前学习的Web开发章节中，我们使用@WebFilter注解一个Filter，然后由Web服务器来加载它，但在这里注解@Component会使@WebFilter注解失效。**可以想象一下这个实例先后会被Web容器以及Spring容器初始化，这种初始化两次的逻辑应该是不被允许的（个人理解）**。
+
+所以，得通过一种方式，**让Servlet容器实例化的Filter，间接引用Spring容器实例化的AuthFilter**。Spring MVC提供了一个`DelegatingFilterProxy`，专门来干这个事情：
 
 ```XML
 <web-app>
@@ -353,17 +356,17 @@ public class DelegatingFilterProxy implements Filter {
 
 如果在web.xml中配置的Filter名字和Spring容器的Bean的名字不一致，那么需要指定Bean的名字。实际应用时，尽量保持名字一致，以减少不必要的配置。
 
-验证AuthFilter是否生效，携带请求头Authorization: Basic email:password，请求/profile路径。
+验证AuthFilter是否生效，携带请求头`Authorization: Basic email:password`，请求`/profile`路径。
 
 如果AuthFilter生效，则拦截所有请求，并对携带指定请求头的请求尝试执行登录逻辑，不管登录逻辑是否成功，都会让请求继续向后转发。
 
 <img src="./image/filter-req.png">
 
-如果登录逻辑验证成功，则访问/profile路径将直接返回profile页面，因为验证逻辑会将user对象放入到session中；如果登录逻辑验证失败，则重定向至/signin路径。另外可以看到控制台中有关Basic模式的验证逻辑打印了两次，因为重定向实际上是让浏览器发送一个新的请求到服务端，**并且这个新的请求会携带之前请求的请求头**，因此/signin路径同样被拦截器所拦截，但是由于验证逻辑再次失败，只返回了signin页面。
+如果登录逻辑验证成功，则访问`/profile`路径将直接返回profile页面，因为验证逻辑会将user对象放入到session中；如果登录逻辑验证失败，则重定向至`/signin`路径。另外可以看到控制台中有关Basic模式的验证逻辑打印了两次，因为重定向实际上是让浏览器发送一个新的请求到服务端，**并且这个新的请求会携带之前请求的请求头（可以通过在doFilter()方法当中打印所有的请求头进行查看）**，因此`/signin`路径同样被过滤器所过滤，但是由于验证逻辑再次失败，只返回了signin页面。
 
 ## 使用Interceptor
 
-Filter组件是由Servlet容器进行管理的，它在Spring MVC的Web应用程序中作用范围如下：
+Filter组件是由Servlet容器进行管理的，它在Spring MVC的Web应用程序中作用范围如下（注意在Filter组件上面的箭头）：
 
 <img src="./image/filter-mvc.png">
 
@@ -375,7 +378,7 @@ Filter组件是由Servlet容器进行管理的，它在Spring MVC的Web应用程
 
 所以，Interceptor的拦截范围其实就是Controller方法，它实际上就相当于基于AOP的方法拦截。因为Interceptor只拦截Controller方法，所以要注意，返回ModelAndView后，后续对View的**渲染**就脱离了Interceptor的拦截范围。
 
-使用Interceptor的好处是Interceptor本身是Spring管理的Bean，因此注入任意Bean都非常简单（可以理解为在上一节我们为了使用UserService的业务，必须将其定义为一个Spring容器组件，然后在web.xml间接引用为一个Servlet组件Filter）。此外，可以应用多个Interceptor，并通过简单的@Order指定顺序（这个是个好处，可以指定顺序）。我们先写一个LoggerInterceptor：
+使用Interceptor的好处是Interceptor本身是Spring管理的Bean，因此注入任意Bean都非常简单（可以理解为在上一节我们为了使用UserService的业务，必须将其定义为一个Spring容器组件，然后在web.xml间接引用为一个Servlet组件Filter）。此外，可以应用多个Interceptor，并通过简单的@Order指定顺序（这也是个好处，可以指定顺序）。我们先写一个LoggerInterceptor：
 
 ```Java
 @Order(1)
@@ -414,7 +417,7 @@ public class LoggerInterceptor implements HandlerInterceptor {
 }
 ```
 
-一个Interceptor必须实现HandlerInterceptor接口，要让拦截器生效，我们在WebMvcConfigurer中注册所有的Interceptor（写一次注册所有，后面再写Interceptor就不需要像上一节写Filter组件时，要让其生效则必须在web.xml里间接引用）：
+一个Interceptor必须实现HandlerInterceptor接口，要让拦截器生效，我们在WebMvcConfigurer中注册所有的Interceptor（一次注册所有拦截器，后续再写Interceptor就不需要像上一节写Filter组件时，写完一个组件要让其生效则必须在web.xml里间接引用）：
 
 ```Java
 @Bean
@@ -429,6 +432,8 @@ WebMvcConfigurer createWebMvcConfigurer(@Autowired HandlerInterceptor[] intercep
     };
 }
 ```
+
+### 处理异常
 
 在Controller中，Spring MVC还允许定义基于@ExceptionHandler注解的异常处理方法。我们来看具体的示例代码：
 
