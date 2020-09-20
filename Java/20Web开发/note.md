@@ -651,7 +651,7 @@ public class ModelAndView {
   4. 之后调用`GetDispatcher`的`invoke`方法，该方法内部构造了方法所需的**实参列表**，使用反射机制传入实例、实参调用`hello()`方法，获得由`hello()`方法返回的`ModelAndView`对象；
   5. 在`process`方法末尾使用模板引擎将数据渲染到模板并写入到响应当中。
 
-<img src="./image/MVC大致流程.jpg">
+<img src="./image/MVC大致流程.jpg" height="50%" width="50%">
 
 **通过MVC框架的底层封装，开发者只需编写Controller类，写好注解映射路径、方法参数定义、内部逻辑即可。方法参数传入以及方法执行都是交由底层的MVC框架利用反射机制去完成的**。
 

@@ -463,11 +463,20 @@ public class UserController {
 
 ## 处理CORS
 
+在开发REST应用时，很多时候，是通过页面的JavaScript和后端的REST API交互。
+
+在JavaScript与REST交互的时候，有很多安全限制。默认情况下，浏览器按同源策略放行JavaScript调用API，即：
+
+- 如果A站在域名a.com页面的JavaScript调用A站自己的API时，没有问题；
+- 如果A站在域名a.com页面的JavaScript调用B站b.com的API时，将被浏览器拒绝访问，因为不满足同源策略。
+
 **同源要求域名要完全相同（a.com和www.a.com不同）（域名相同URI可以不同，也就是说在同一个域名下对不同的URI发起请求），协议要相同（http和https不同），端口要相同**。
 
 如果A站的JavaScript访问B站API的时候，B站能够返回响应头`Access-Control-Allow-Origin: http://a.com`，那么，*浏览器*就允许A站的JavaScript访问B站的API。
 
-注意到跨域访问能否成功，取决于B站是否愿意给A站返回一个正确的Access-Control-Allow-Origin响应头，所以决定权永远在提供API的服务方手中。
+注意到跨域访问能否成功，取决于B站是否愿意给A站返回一个正确的`Access-Control-Allow-Origin`响应头，所以决定权永远在提供API的服务方手中。
+
+### 使用@CrossOrigin
 
 ```Java
 @CrossOrigin(origins = "http://local.liaoxuefeng.com:8080")
@@ -479,6 +488,8 @@ public class ApiController {
 ```
 
 上述定义在ApiController处的@CrossOrigin指定了只允许来自`local.liaoxuefeng.com`跨域访问，允许多个域访问需要写成数组形式，例如`origins = ({"http://a.com", "https://www.b.com"})`。如果要允许任何域访问，写成`origins = "*"`即可。
+
+### 使用CorsRegistry
 
 ```Java
 @Bean
@@ -503,13 +514,15 @@ WebMvcConfigurer createWebMvcConfigurer() {
 
 这种方式可以创建一个全局CORS配置，如果仔细地设计URL结构，那么可以一目了然地看到各个URL的CORS规则，推荐使用这种方式配置CORS。
 
+### 测试
+
 <img src="./image/CORS01.png">
 
 <img src="./image/CORS02.png">
 
 <img src="./image/CORS03.png">
 
-当我使用`http://127.0.0.1:8080/`访问首页时，三个跨域访问API的JavaScript语句只有域名完全相同的语句请求成功，其它都被拒绝；同理使用`http://localhost:8080/`访问首页时，也只有域名相同的访问成功；使用全局CORS配置的映射路径`http://local.liaoxuefeng.com:8080/`访问首页时，可以看到访问语句都请求成功。
+当使用`http://127.0.0.1:8080/`访问首页时，三个跨域访问API的JavaScript语句只有域名完全相同的语句请求成功，其它都被拒绝；同理使用`http://localhost:8080/`访问首页时，也只有域名相同的访问成功；使用全局CORS配置的映射路径`http://local.liaoxuefeng.com:8080/`访问首页时，可以看到访问语句都请求成功。
 
 [有关local.liaoxuefeng.com域名也能访问首页的问题](https://www.liaoxuefeng.com/discuss/1279869501571105/1353230797766689)
 
@@ -527,7 +540,7 @@ Accept-Language: zh-CN,zh;q=0.8,en;q=0.2
 
 上述HTTP请求头表示优先选择简体中文，其次选择中文，最后选择英文。q表示权重，解析后我们可获得一个根据优先级排序的语言列表，把它转换为Java的Locale，即获得了用户的Locale。大多数框架通常只返回权重最高的Locale。
 
-Spring MVC通过LocaleResolver来自动从HttpServletRequest中获取Locale。有多种LocaleResolver的实现类，其中最常用的是CookieLocaleResolver：
+**Spring MVC通过LocaleResolver来自动从HttpServletRequest中获取Locale**。有多种LocaleResolver的实现类，其中最常用的是CookieLocaleResolver：
 
 ```Java
 @Bean
@@ -543,17 +556,37 @@ CookieLocaleResolver从HttpServletRequest中获取Locale时，**首先根据一�
 
 当用户第一次访问网站时，CookieLocaleResolver只能从HTTP头获取Locale，即使用浏览器的默认语言。**通常网站也允许用户自己选择语言，此时，CookieLocaleResolver就会把用户选择的语言存放到Cookie中，下一次访问时，就会返回用户上次选择的语言而不是浏览器默认语言**。
 
-多语言支持需要从HTTP请求中解析用户的Locale，然后针对不同Locale显示不同的语言；Spring MVC应用程序通过MessageSource和LocaleResolver，配合View实现国际化。
+- 多语言支持需要从HTTP请求中解析用户的Locale，然后针对不同Locale显示不同的语言；
+- Spring MVC应用程序通过MessageSource和LocaleResolver，配合View实现国际化。
 
 ## 异步处理
 
+> 简单来说就是在线程内部启用一个新的线程来执行那些操作耗时的业务逻辑，而启用一个新的线程就体现了异步这一概念。
+
 在Servlet模型中，每个请求都是由某个线程处理，然后，将响应写入IO流，发送给客户端。从开始处理请求，到写入响应完成，都是在同一个线程中处理的。
 
-实现Servlet容器的时候，只要每处理一个请求，就创建一个新线程处理它，就能保证正确实现了Servlet线程模型。在实际产品中，例如Tomcat，**总是通过线程池来处理请求**，它仍然符合一个请求从头到尾都由某一个线程处理。
+**实现Servlet容器的时候，只要每处理一个请求，就创建一个新线程处理它，就能保证正确实现了Servlet线程模型**。在实际产品中，例如Tomcat，**总是通过线程池来处理请求**，它仍然符合一个请求从头到尾都由某一个线程处理（**接收请求、业务处理、返回响应这三个操作都由Tomcat线程池线程来完成**）。
 
-这种线程模型非常重要，因为Spring的JDBC事务是基于ThreadLocal实现的，如果在处理过程中，一会由线程A处理，一会又由线程B处理，那事务就全乱套了。此外，很多安全认证，也是基于ThreadLocal实现的，可以保证在处理请求的过程中，各个线程互不影响。
+**这种线程模型非常重要，因为Spring的JDBC事务是基于ThreadLocal实现的，如果在处理过程中，一会由线程A处理，一会又由线程B处理，那事务就全乱套了。此外，很多安全认证，也是基于ThreadLocal实现的，可以保证在处理请求的过程中，各个线程互不影响**。
 
-但是，如果一个请求处理的时间较长，例如几秒钟甚至更长，那么，这种基于线程池的同步模型很快就会把所有线程耗尽，导致服务器无法响应新的请求。如果把长时间处理的请求改为异步处理，那么线程池的利用率就会大大提高。Servlet从3.0规范开始添加了异步支持，允许对一个请求进行异步处理。
+但是，如果一个请求处理的时间较长，例如几秒钟甚至更长，那么，这种基于线程池的同步模型很快就会把所有线程耗尽，导致服务器无法响应新的请求。如果把长时间处理的请求改为异步处理，那么线程池的利用率就会大大提高。Servlet从3.0规范开始添加了异步支持，允许对一个请求进行异步处理（**将业务处理交由其它线程来处理，Tomcat线程池线程只负责接收请求和返回响应**）。
+
+[异步支持](https://zhuanlan.zhihu.com/p/126225356)
+
+<img src="./image/同步请求.jpg" width="720" height="274">
+
+- 将请求信息解析为HttpServletRequest；
+- 分发到具体Servlet处理相应的业务；
+- 通过HttpServletResponse将响应结果返回给等待客户端。
+
+<img src="./image/异步请求.jpg">
+
+- 将请求信息解析为HttpServletRequest;
+- 分发到具体Servlet处理,将业务提交给自定义业务线程池，请求立刻返回，Tomcat线程立刻被释放;
+- 当业务线程将任务执行结束，将会将结果转交给Tomcat线程;
+- 通过HttpServletResponse将响应结果返回给等待客户端。
+
+<img src="./image/异步请求优点.png">
 
 首先建立一个Web工程，然后编辑web.xml文件如下：
 
@@ -593,7 +626,6 @@ CookieLocaleResolver从HttpServletRequest中获取Locale时，**首先根据一�
 ```Java
 @GetMapping("/users")
 public Callable<List<User>> users() {
-    // 返回一个新的线程：
     return () -> {
         // 模拟3秒耗时:
         try {
@@ -611,7 +643,6 @@ public Callable<List<User>> users() {
 @GetMapping("/users/{id}")
 public DeferredResult<User> user(@PathVariable("id") long id) {
     DeferredResult<User> result = new DeferredResult<>(3000L); // 3秒超时
-    // 启动一个新的线程：
     new Thread(() -> {
         // 等待1秒:
         try {
@@ -633,7 +664,9 @@ public DeferredResult<User> user(@PathVariable("id") long id) {
 
 使用DeferredResult时，可以设置超时，**超时会自动返回超时错误响应**。在另一个线程中，可以调用setResult()写入结果，也可以调用setErrorResult()写入一个错误结果。
 
-**异步处理的大致流程：首先用线程池线程接收请求，然后内部启动另外一个线程进行处理，注意这个线程并不属于线程池，于是前面的线程池线程此时可以继续去接收其它的请求，当启动的线程返回结果时，再由线程池线程将结果写入到响应当中**。
+**异步处理的大致流程：首先用线程池线程接收请求，然后应用程序启动另外一个线程进行业务处理，注意这个线程并不属于线程池，于是前面的线程池线程可以立即返回然后去接收其它的请求，当启动的线程返回结果时，再由线程池线程将结果写入到响应当中**。
+
+### 使用Filter
 
 当我们使用async模式处理请求时，原有的Filter也可以工作，但我们必须在web.xml中添加`<async-supported>`并设置为true。
 
@@ -655,7 +688,7 @@ public DeferredResult<User> user(@PathVariable("id") long id) {
         <filter-name>sync-filter</filter-name>
         <url-pattern>/api/version</url-pattern>
     </filter-mapping>
-    <!-- 上下两个filter都可以匹配/api/version -->
+    <!-- 这里两个filter都可以过滤/api/version，并按照谁在上谁先过滤的原则进行过滤。 -->
     <filter-mapping>
         <filter-name>async-filter</filter-name>
         <url-pattern>/api/*</url-pattern>
@@ -664,34 +697,37 @@ public DeferredResult<User> user(@PathVariable("id") long id) {
 </web-app>
 ```
 
-一个声明为支持`<async-supported>`的Filter既可以过滤async处理请求，**也可以过滤正常的同步处理请求**，而未声明`<async-supported>`的Filter无法支持async请求，如果一个普通的Filter遇到async请求时，会直接报错，因此，**务必注意普通Filter的`<url-pattern>`不要匹配处理async请求的路径**。
+一个声明为支持`<async-supported>`的Filter既可以过滤异步处理请求，**也可以过滤正常的同步处理请求**，而未声明`<async-supported>`的Filter无法支持异步请求，如果一个普通的Filter遇到异步请求时，会直接报错，因此，**务必注意普通Filter的`<url-pattern>`不要匹配处理异步请求的路径**。
 
-**不要用不支持异步处理的Filter去匹配内部是异步处理的Controller方法**。
+**不要用不支持异步处理的Filter去匹配内部是异步处理的Controller组件方法**。
 
 对于正常的同步请求，例如/api/version，我们可以看到如下输出，每个Filter和ApiController都是由同一个线程执行：
 
 ```text
-2020-05-16 11:22:40 [http-nio-8080-exec-1] INFO  c.i.learnjava.web.SyncFilter - start SyncFilter...
-2020-05-16 11:22:40 [http-nio-8080-exec-1] INFO  c.i.learnjava.web.AsyncFilter - start AsyncFilter...
-2020-05-16 11:22:40 [http-nio-8080-exec-1] INFO  c.i.learnjava.web.ApiController - get version...
-2020-05-16 11:22:40 [http-nio-8080-exec-1] INFO  c.i.learnjava.web.AsyncFilter - end AsyncFilter.
-2020-05-16 11:22:40 [http-nio-8080-exec-1] INFO  c.i.learnjava.web.SyncFilter - end SyncFilter.
+2020-09-20 20:26:19 [http-nio-8080-exec-8] INFO  c.i.learnjava.web.SyncFilter - start SyncFilter...
+2020-09-20 20:26:19 [http-nio-8080-exec-8] INFO  c.i.learnjava.web.AsyncFilter - start AsyncFilter...
+2020-09-20 20:26:19 [http-nio-8080-exec-8] INFO  c.i.learnjava.web.ApiController - get version...
+2020-09-20 20:26:19 [http-nio-8080-exec-8] INFO  c.i.learnjava.web.AsyncFilter - end AsyncFilter.
+2020-09-20 20:26:19 [http-nio-8080-exec-8] INFO  c.i.learnjava.web.SyncFilter - end SyncFilter.
 ```
+
+从上述输出可以看出请求接收、业务处理、响应返回，是在一个线程内**同步**执行的。
 
 对于异步请求，例如/api/users，我们可以看到如下输出，AsyncFilter和ApiController是由同一个线程执行的，但是，返回响应的是另一个线程：
 
 ```text
-2020-05-16 11:23:49 [http-nio-8080-exec-4] INFO  c.i.learnjava.web.AsyncFilter - start AsyncFilter...
-2020-05-16 11:23:49 [http-nio-8080-exec-4] INFO  c.i.learnjava.web.ApiController - get users...
-2020-05-16 11:23:49 [http-nio-8080-exec-4] INFO  c.i.learnjava.web.AsyncFilter - end AsyncFilter.
-2020-05-16 11:23:52 [MvcAsync1] INFO  c.i.learnjava.web.ApiController - return users...
+2020-09-20 20:27:04 [http-nio-8080-exec-5] INFO  c.i.learnjava.web.AsyncFilter - start AsyncFilter...
+2020-09-20 20:27:04 [http-nio-8080-exec-5] INFO  c.i.learnjava.web.AsyncFilter - end AsyncFilter.
+2020-09-20 20:27:05 [Thread-3] INFO  c.i.learnjava.web.ApiController - deferred result is set.
 ```
 
-在实际使用时，经常用到的就是DeferredResult，因为返回DeferredResult时，可以设置超时、正常结果和错误结果，易于编写比较灵活的逻辑。
+从上述输出可以看出Tomcat线程池线程已经先执行完毕，随后在其内部**异步**启动的线程才执行，它的返回结果会由线程池线程来写入到响应当中返回（此处无具体输出）。
 
-使用async异步处理响应时，要时刻牢记，**在另一个异步线程中的事务和Controller方法中执行的事务不是同一个事务**，在Controller中绑定的ThreadLocal信息也无法在异步线程中获取。
+**在实际使用时，经常用到的就是DeferredResult，因为返回DeferredResult时，可以设置超时、正常结果和错误结果，易于编写比较灵活的逻辑**。
 
-此外，Servlet 3.0规范添加的异步支持是针对同步模型打了一个“补丁”，虽然可以异步处理请求，但高并发异步请求时，它的处理效率并不高，**因为这种异步模型并没有用到真正的“原生”异步**。Java标准库提供了封装操作系统的异步IO包java.nio，是真正的多路复用IO模型，可以用少量线程支持大量并发。使用NIO编程复杂度比同步IO高很多，因此我们很少直接使用NIO。相反，**大部分需要高性能异步IO的应用程序会选择Netty这样的框架**，它基于NIO提供了更易于使用的API，方便开发异步应用程序。
+**使用async异步处理响应时，要时刻牢记，在另一个异步线程中的事务和Controller方法中执行的事务不是同一个事务，在Controller中绑定的ThreadLocal信息也无法在异步线程中获取**。
+
+此外，Servlet 3.0规范添加的异步支持是针对同步模型打了一个“补丁”，虽然可以异步处理请求，但高并发异步请求时，它的处理效率并不高，**因为这种异步模型并没有用到真正的“原生”异步**。Java标准库提供了封装操作系统的异步IO包`java.nio`，是真正的多路复用IO模型，可以用少量线程支持大量并发。使用NIO编程复杂度比同步IO高很多，因此我们很少直接使用NIO。相反，**大部分需要高性能异步IO的应用程序会选择Netty这样的框架**，它基于NIO提供了更易于使用的API，方便开发异步应用程序。
 
 ## 使用WebSocket
 
