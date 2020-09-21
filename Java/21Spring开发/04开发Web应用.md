@@ -412,6 +412,7 @@ public class LoggerInterceptor implements HandlerInterceptor {
     // 无论Controller方法是否抛异常都会执行，参数ex就是Controller方法抛出的异常（未抛出异常是null）
     @Override
     public void afterCompletion(HttpServletRequest request, HttpServletResponse response, Object handler, Exception ex) throws Exception {
+        // 无法捕获也无法返回ModelAndView对象
         this.logger.info("afterCompletion {}: exception = {}", request.getRequestURI(), ex);
     }
 }
@@ -430,6 +431,20 @@ WebMvcConfigurer createWebMvcConfigurer(@Autowired HandlerInterceptor[] intercep
         }
         ...
     };
+}
+```
+
+我们可以将用户数据的添加逻辑也放置在拦截器当中，只要成功进行过登录操作，那么从session当中就能获取到用户数据，否则将获取到空对象：
+
+```java
+@Override
+public void postHandle(HttpServletRequest request, HttpServletResponse response, Object handler,
+                        ModelAndView modelAndView) throws Exception {
+    logger.info("postHandle {}.", request.getRequestURI());
+    if (modelAndView != null) {
+        modelAndView.addObject("user", request.getSession().getAttribute(UserController.KEY_USER));
+        modelAndView.addObject("__time__", LocalDateTime.now());
+    }
 }
 ```
 
@@ -456,6 +471,8 @@ public class UserController {
 异常处理方法没有固定的方法签名，可以传入Exception、HttpServletRequest等，返回值可以是void，也可以是ModelAndView，上述代码通过@ExceptionHandler(RuntimeException.class)表示当发生RuntimeException的时候，就自动调用此方法处理。注意到我们返回了一个新的ModelAndView，这样在应用程序内部**如果发生了预料之外的异常**，可以给用户显示一个出错页面，而不是简单的500 Internal Server Error或404 Not Found。
 
 使用ExceptionHandler时，要注意它仅作用于**当前**的Controller，即ControllerA中定义的一个ExceptionHandler方法对ControllerB不起作用。
+
+ExceptionHandler比起afterCompletion就是它能够返回一个ModelAndView对象作为异常处理的结果（因为它也是一个Controller组件方法）。
 
 如果我们有很多Controller，每个Controller都需要处理一些通用的异常，例如LoginException，思考一下应该怎么避免重复代码。
 
@@ -561,7 +578,7 @@ CookieLocaleResolver从HttpServletRequest中获取Locale时，**首先根据一�
 
 ## 异步处理
 
-> 简单来说就是在线程内部启用一个新的线程来执行那些操作耗时的业务逻辑，而启用一个新的线程就体现了异步这一概念。
+> 简单来说就是在已有的线程内部启用一个新的线程来执行那些操作耗时的业务逻辑，而启用一个新的线程就体现了异步这一概念。
 
 在Servlet模型中，每个请求都是由某个线程处理，然后，将响应写入IO流，发送给客户端。从开始处理请求，到写入响应完成，都是在同一个线程中处理的。
 
@@ -727,7 +744,7 @@ public DeferredResult<User> user(@PathVariable("id") long id) {
 
 **使用async异步处理响应时，要时刻牢记，在另一个异步线程中的事务和Controller方法中执行的事务不是同一个事务，在Controller中绑定的ThreadLocal信息也无法在异步线程中获取**。
 
-此外，Servlet 3.0规范添加的异步支持是针对同步模型打了一个“补丁”，虽然可以异步处理请求，但高并发异步请求时，它的处理效率并不高，**因为这种异步模型并没有用到真正的“原生”异步**。Java标准库提供了封装操作系统的异步IO包`java.nio`，是真正的多路复用IO模型，可以用少量线程支持大量并发。使用NIO编程复杂度比同步IO高很多，因此我们很少直接使用NIO。相反，**大部分需要高性能异步IO的应用程序会选择Netty这样的框架**，它基于NIO提供了更易于使用的API，方便开发异步应用程序。
+此外，Servlet 3.0规范添加的异步支持是针对同步模型打了一个“补丁”，虽然可以异步处理请求，但高并发异步请求时，它的处理效率并不高，**因为这种异步模型并没有用到真正的“原生”异步**。Java标准库提供了封装操作系统的异步IO包`java.nio`，是真正的多路复用IO模型，可以用少量线程支持大量并发。使用NIO编程复杂度比同步IO高很多，因此我们很少直接使用NIO。**相反，大部分需要高性能异步IO的应用程序会选择Netty这样的框架，它基于NIO提供了更易于使用的API，方便开发异步应用程序**。
 
 ## 使用WebSocket
 
@@ -754,4 +771,145 @@ Connection: Upgrade
 
 现代浏览器都已经支持WebSocket协议，服务器则需要底层框架支持。Java的Servlet规范从3.1开始支持WebSocket，所以，必须选择支持Servlet 3.1或更高规范的Servlet容器，才能支持WebSocket。最新版本的Tomcat、Jetty等开源服务器均支持WebSocket。
 
-和上一节我们介绍的异步处理类似，Servlet的线程模型并不适合大规模的长链接。基于NIO的Netty等框架更适合处理WebSocket长链接。
+我们需要在AppConfig中加入Spring Web对WebSocket的配置，此处我们需要创建一个WebSocketConfigurer实例：
+
+```java
+@Bean
+WebSocketConfigurer createWebSocketConfigurer(
+        @Autowired ChatHandler chatHandler,
+        @Autowired ChatHandshakeInterceptor chatInterceptor)
+{
+    return new WebSocketConfigurer() {
+        @Override
+        public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
+            // 把URL与指定的WebSocketHandler关联，可关联多个:
+            registry.addHandler(chatHandler, "/chat").addInterceptors(chatInterceptor);
+        }
+    };
+}
+```
+
+此实例在内部通过WebSocketHandlerRegistry注册能处理WebSocket的WebSocketHandler，以及可选的WebSocket拦截器HandshakeInterceptor。我们注入的这两个类都是自己编写的业务逻辑，后面我们详细讨论如何编写它们，**这里只需关注浏览器连接到WebSocket的URL是/chat**。
+
+### 处理WebSocket连接
+
+和处理普通HTTP请求不同，没法用一个方法处理一个URL。Spring提供了TextWebSocketHandler和BinaryWebSocketHandler分别处理文本消息和二进制消息，这里我们选择文本消息作为聊天室的协议，因此，ChatHandler需要继承自TextWebSocketHandler：
+
+```java
+@Component
+public class ChatHandler extends TextWebSocketHandler {
+    ...
+}
+```
+
+当浏览器请求一个WebSocket连接后，如果成功建立连接，Spring会自动调用afterConnectionEstablished()方法，任何原因导致WebSocket连接中断时，Spring会自动调用afterConnectionClosed方法，因此，覆写这两个方法即可处理连接成功和结束后的业务逻辑：
+
+```java
+@Component
+public class ChatHandler extends TextWebSocketHandler {
+    // 保存所有Client的WebSocket会话实例:
+    private Map<String, WebSocketSession> clients = new ConcurrentHashMap<>();
+
+    @Override
+    public void afterConnectionEstablished(WebSocketSession session) throws Exception {
+        // 新会话根据ID放入Map:
+        clients.put(session.getId(), session);
+        session.getAttributes().put("name", "Guest1");
+    }
+
+    @Override
+    public void afterConnectionClosed(WebSocketSession session, CloseStatus status) throws Exception {
+        clients.remove(session.getId());
+    }
+}
+```
+
+**每个WebSocket会话以WebSocketSession表示，且已分配唯一ID**。和WebSocket相关的数据，例如用户名称等，均可放入关联的getAttributes()中。
+
+用实例变量clients持有当前所有的WebSocketSession是为了广播，即向所有用户推送同一消息时，可以这么写：
+
+```java
+String json = ...
+TextMessage message = new TextMessage(json);
+for (String id : clients.keySet()) {
+    WebSocketSession session = clients.get(id);
+    session.sendMessage(message);
+}
+```
+
+我们发送的消息是序列化后的JSON，可以用ChatMessage表示：
+
+```java
+public class ChatMessage {
+    public long timestamp;
+    public String name;
+    public String text;
+}
+```
+
+每收到一个用户的消息后，我们就需要广播给所有用户：
+
+```java
+@Component
+public class ChatHandler extends TextWebSocketHandler {
+    ...
+    @Override
+    protected void handleTextMessage(WebSocketSession session, TextMessage message) throws Exception {
+        String s = message.getPayload();
+        String r = ... // 根据输入消息构造待发送消息
+        broadcastMessage(r); // 推送给所有用户
+    }
+}
+```
+
+如果要推送给指定的几个用户，那就需要在clients中根据条件查找出某些WebSocketSession，然后发送消息。
+
+注意到我们在注册WebSocket时还传入了一个ChatHandshakeInterceptor，这个类实际上可以从HttpSessionHandshakeInterceptor继承，它的主要作用是在WebSocket建立连接后，把HttpSession的一些属性复制到WebSocketSession，例如，用户的登录信息等：
+
+```java
+@Component
+public class ChatHandshakeInterceptor extends HttpSessionHandshakeInterceptor {
+    public ChatHandshakeInterceptor() {
+        // 指定从HttpSession复制属性到WebSocketSession:
+        super(List.of(UserController.KEY_USER));
+    }
+}
+```
+
+这样，在ChatHandler中，可以从WebSocketSession.getAttributes()中获取到复制过来的属性。
+
+### 客户端开发
+
+在完成了服务器端的开发后，我们还需要在页面编写一点JavaScript逻辑：
+
+```js
+// 创建WebSocket连接:
+var ws = new WebSocket('ws://' + location.host + '/chat');
+// 连接成功时:
+ws.addEventListener('open', function (event) {
+    console.log('websocket connected.');
+});
+// 收到消息时:
+ws.addEventListener('message', function (event) {
+    console.log('message: ' + event.data);
+    var msgs = JSON.parse(event.data);
+    // TODO:
+});
+// 连接关闭时:
+ws.addEventListener('close', function () {
+    console.log('websocket closed.');
+});
+// 绑定到全局变量:
+window.chatWs = ws;
+```
+
+用户可以在连接成功后任何时候给服务器发送消息：
+
+```js
+var inputText = 'Hello, WebSocket.';
+window.chatWs.send(JSON.stringify({text: inputText}));
+```
+
+最后，连调浏览器和服务器端，如果一切无误，可以开多个不同的浏览器测试WebSocket的推送和广播。
+
+和上一节我们介绍的异步处理类似，Servlet的线程模型并不适合大规模的长链接。**基于NIO的Netty等框架更适合处理WebSocket长链接**。
