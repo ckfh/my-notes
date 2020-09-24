@@ -793,7 +793,7 @@ WebSocketConfigurer createWebSocketConfigurer(
 
 ### 处理WebSocket连接
 
-和处理普通HTTP请求不同，没法用一个方法处理一个URL。Spring提供了TextWebSocketHandler和BinaryWebSocketHandler分别处理文本消息和二进制消息，这里我们选择文本消息作为聊天室的协议，因此，ChatHandler需要继承自TextWebSocketHandler：
+**和处理普通HTTP请求不同，没法用一个方法处理一个URL**。Spring提供了TextWebSocketHandler和BinaryWebSocketHandler分别处理文本消息和二进制消息，这里我们选择文本消息作为聊天室的协议，因此，ChatHandler需要继承自TextWebSocketHandler：
 
 ```java
 @Component
