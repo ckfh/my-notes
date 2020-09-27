@@ -8,11 +8,14 @@
 
 <img src="./image/工程结构.png">
 
+其中，在`src/main/resources`目录下，注意到几个文件：
+
+### application.yml
+
+这是Spring Boot默认的配置文件，它采用YAML格式而不是.properties格式，文件名必须是application.yml而不是其他名称。可以将所有的.properties配置都集中在该文件当中，就不需要在主配置类上使用注解引入.properties文件。
+
 ```yml
 # application.yml
-
-server:
-  port: ${APP_PORT:8080}
 
 spring:
   application:
@@ -21,7 +24,7 @@ spring:
     url: jdbc:hsqldb:file:testdb
     username: sa
     password:
-    driver-class-name: org.hsqldb.jdbc.JDBCDriver
+    dirver-class-name: org.hsqldb.jdbc.JDBCDriver
     hikari:
       auto-commit: false
       connection-timeout: 3000
@@ -29,31 +32,38 @@ spring:
       max-lifetime: 60000
       maximum-pool-size: 20
       minimum-idle: 1
-# https://pebbletemplates.io/wiki/guide/spring-boot-integration/
-pebble:
-  # 默认为".pebble"，改为"":
-  suffix:
-  # 开发阶段禁用模板缓存:
-  cache: false
 ```
 
-这种${APP_PORT:8080}意思是，首先从环境变量查找APP_PORT，如果环境变量定义了，那么使用环境变量的值，否则，使用默认值8080。这使得我们在开发和部署时更加方便，因为开发时无需设定任何环境变量，直接使用默认值即8080端口，而实际线上运行的时候，只需要传入环境变量即可：
+### 使用环境变量
+
+在配置文件中，我们经常使用如下的格式对某个key进行配置：
+
+```yml
+app:
+  db:
+    host: ${DB_HOST:localhost}
+    user: ${DB_USER:root}
+    password: ${DB_PASSWORD:password}
+```
+
+这种`${DB_HOST:localhost}`意思是，首先从环境变量查找DB_HOST，如果环境变量定义了，那么使用环境变量的值，否则，使用默认值localhost。
+
+这使得我们在开发和部署时更加方便，因为开发时无需设定任何环境变量，直接使用默认值即本地数据库，而实际线上运行的时候，只需要传入环境变量即可：
 
 ```bash
-APP_PORT=80 java -jar xxx.jar
+DB_HOST=10.0.1.123 DB_USER=prod DB_PASSWORD=xxxx java -jar xxx.jar
 ```
 
-```xml
-<!-- logback-spring.xml -->
+### logback-spring.xml
 
+```xml
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration>
-    <!-- 通过<include resource="..." />引入了Spring Boot的一个缺省配置 -->
-    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+    <!-- 通过<include resource="..." />引入了Spring Boot的一个缺省配置，这样我们就可以引用类似${CONSOLE_LOG_PATTERN}这样的变量。 -->
+    <include resource="org/springframework/boot/logging/logback/defaults.xml" />
 
     <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
         <encoder>
-            <!-- 就可以引用类似${CONSOLE_LOG_PATTERN}这样的变量 -->
             <pattern>${CONSOLE_LOG_PATTERN}</pattern>
             <charset>utf8</charset>
         </encoder>
@@ -64,7 +74,7 @@ APP_PORT=80 java -jar xxx.jar
             <pattern>${FILE_LOG_PATTERN}</pattern>
             <charset>utf8</charset>
         </encoder>
-        <file>app.log</file>
+          <file>app.log</file>
         <rollingPolicy class="ch.qos.logback.core.rolling.FixedWindowRollingPolicy">
             <maxIndex>1</maxIndex>
             <fileNamePattern>app.log.%i</fileNamePattern>
@@ -75,36 +85,42 @@ APP_PORT=80 java -jar xxx.jar
     </appender>
 
     <root level="INFO">
-        <appender-ref ref="CONSOLE"/>
-        <appender-ref ref="APP_LOG"/>
+        <appender-ref ref="CONSOLE" />
+        <appender-ref ref="APP_LOG" />
     </root>
 </configuration>
 ```
 
-Spring Boot要求main()方法所在的启动类必须放到根package下，命名不做要求，这里我们以Application.java命名，它的内容如下：
+static是静态文件目录，templates是模板文件目录，注意它们不再存放在src/main/webapp下，而是直接放到src/main/resources这个classpath目录，因为在Spring Boot中已经不需要专门的webapp目录了。
+
+以上就是Spring Boot的标准目录结构，它完全是一个基于Java应用的普通Maven项目。
+
+再来看源码目录结构：
+
+<img src="./image/源码目录结构.png">
+
+在存放源码的src/main/java目录中，Spring Boot对Java包的层级结构有一个要求。注意到我们的根package是com.itranswarp.learnjava，下面还有entity、service、web等子package。Spring Boot要求main()方法所在的启动类必须放到根package下，命名不做要求，这里我们以Application.java命名，它的内容如下：
 
 ```java
-// 一个注解就相当于启动了自动配置和自动扫描：
 @SpringBootApplication
 public class Application {
-    public static void main(String[] args) {
+    public static void main(String[] args) throws Exception {
         SpringApplication.run(Application.class, args);
-    }
-
-    // -- Mvc configuration ---------------------------------------------------
-
-    @Bean
-    WebMvcConfigurer createWebMvcConfigurer() {
-        return new WebMvcConfigurer() {
-            @Override
-            public void addResourceHandlers(ResourceHandlerRegistry registry) {
-                // 因为static文件夹放在了resources目录下，因此路径前缀加上了classpath：
-                registry.addResourceHandler("/static/**").addResourceLocations("classpath:/static/");
-            }
-        };
     }
 }
 ```
+
+启动Spring Boot应用程序只需要一行代码加上一个注解@SpringBootApplication，该注解实际上又包含了：
+
+- @SpringBootConfiguration
+  - @Configuration
+- @EnableAutoConfiguration
+  - @AutoConfigurationPackage
+- @ComponentScan
+
+**这样一个注解@SpringBootApplication就相当于启动了自动配置和自动扫描**。
+
+再观察pom.xml，它的内容如下：
 
 ```xml
 <project xmlns="http://maven.apache.org/POM/4.0.0"
@@ -145,6 +161,37 @@ public class Application {
         </dependency>
     </dependencies>
 </project>
+```
+
+根据`pebble-spring-boot-starter`的[文档](https://pebbletemplates.io/wiki/guide/spring-boot-integration/)，加入如下配置到application.yml：
+
+```yml
+pebble:
+  # 默认为".pebble"，改为"":
+  suffix:
+  # 开发阶段禁用模板缓存:
+  cache: false
+```
+
+对Application稍作改动，添加WebMvcConfigurer这个Bean：
+
+```java
+@SpringBootApplication
+public class Application {
+    ...
+
+    @Bean
+    WebMvcConfigurer createWebMvcConfigurer(@Autowired HandlerInterceptor[] interceptors) {
+        return new WebMvcConfigurer() {
+            @Override
+            public void addResourceHandlers(ResourceHandlerRegistry registry) {
+                // 映射路径`/static/`到classpath路径:
+                registry.addResourceHandler("/static/**")
+                        .addResourceLocations("classpath:/static/");
+            }
+        };
+    }
+}
 ```
 
 前面我们定义的数据源、声明式事务、JdbcTemplate在哪创建的？怎么就可以直接注入到自己编写的UserService中呢？这些自动创建的Bean就是Spring Boot的特色：AutoConfiguration。
@@ -223,7 +270,7 @@ public class Application {
 }
 ```
 
-那么根据条件@ConditionalOnMissingBean(JdbcOperations.class)，Spring Boot就不会再创建一个重复的JdbcTemplate（因为JdbcOperations是JdbcTemplate的父类）。
+**那么根据条件@ConditionalOnMissingBean(JdbcOperations.class)，Spring Boot就不会再创建一个重复的JdbcTemplate（因为JdbcOperations是JdbcTemplate的父类）**。
 
 可见，Spring Boot自动装配功能是通过自动扫描➕**条件装配**实现的，这一套机制在默认情况下工作得很好，**但是，如果我们要手动控制某个Bean的创建，就需要详细地了解Spring Boot自动创建的原理，很多时候还要跟踪XxxAutoConfiguration，以便设定条件使得某个Bean不会被自动创建**。
 
@@ -244,7 +291,10 @@ Spring Boot提供了一个开发者工具，可以监控classpath路径上的文
 
 ```xml
 <project ...>
-    ...
+    <dependencies>
+        ...
+    </dependencies>
+
     <build>
         <finalName>awesome-app</finalName>
         <plugins>
@@ -256,8 +306,6 @@ Spring Boot提供了一个开发者工具，可以监控classpath路径上的文
     </build>
 </project>
 ```
-
-如果IDEA无法自动根据parent版本导入该插件，那就需要手动指定版本。
 
 ## 使用Actuator
 
@@ -272,7 +320,7 @@ Spring Boot已经内置了一个监控功能，它叫Actuator，使用Actuator�
 </dependency>
 ```
 
-然后正常启动应用程序，Actuator会把它**能收集到的所有信息**都暴露给JMX。此外，Actuator还可以通过URL/actuator/挂载一些监控点，例如，输入`http://localhost:8080/actuator/health`，我们可以查看应用程序当前状态：
+然后正常启动应用程序，Actuator会把它**能收集到的所有信息**都暴露给JMX。此外，Actuator还可以通过URL`/actuator/`挂载一些监控点，例如，输入`http://localhost:8080/actuator/health`，我们可以查看应用程序当前状态：
 
 ```text
 {
@@ -280,9 +328,9 @@ Spring Boot已经内置了一个监控功能，它叫Actuator，使用Actuator�
 }
 ```
 
-许多网关作为反向代理需要一个URL来探测后端集群应用是否存活，这个URL就可以提供给网关使用。
+**许多网关作为反向代理需要一个URL来探测后端集群应用是否存活，这个URL就可以提供给网关使用**。
 
-**Actuator默认把所有访问点暴露给JMX，但处于安全原因，只有health和info会暴露给Web**。Actuator提供的所有访问点均在官方文档列出，要暴露更多的访问点给Web，需要在application.yml中加上配置：
+**Actuator默认把所有访问点暴露给JMX，但处于安全原因，只有`health`和`info`会暴露给Web**。Actuator提供的所有访问点均在官方文档列出，要暴露更多的访问点给Web，需要在application.yml中加上配置：
 
 ```yml
 management:
@@ -292,11 +340,22 @@ management:
         include: info, health, beans, env, metrics
 ```
 
-要特别注意暴露的URL的安全性，例如，/actuator/env可以获取当前机器的所有环境变量，不可暴露给公网。
+**要特别注意暴露的URL的安全性，例如，`/actuator/env`可以获取当前机器的所有环境变量，不可暴露给公网**。
 
 ## 使用Profiles
 
-Profile表示一个环境的概念，如开发、测试和生产这3个环境，或者按git分支定义master、dev这些环境。
+- Spring Boot允许在一个配置文件中针对不同Profile进行配置；
+- Spring Boot在未指定Profile时默认为default。
+
+Profile本身是Spring提供的功能，我们在使用条件装配中已经讲到了，Profile表示一个环境的概念，如开发、测试和生产这3个环境，或者按git分支定义master、dev这些环境。
+
+在启动一个Spring应用程序的时候，可以传入一个或多个环境，例如：
+
+```text
+-Dspring.profiles.active=test,master
+```
+
+在前面的Spring使用条件装配的章节当中，我们通过@Profile配置不同的Bean。**Spring Boot对Profiles的支持在于，还可以在application.yml中为每个环境进行配置**。下面是一个示例配置：
 
 ```yml
 server:
@@ -342,9 +401,29 @@ pebble:
   cache: true
 ```
 
-IDEA可以直接在启动配置中指定环境，切换环境时，会覆盖default环境中的相同配置，其余配置仍按照default环境中的配置。
+注意到分隔符`---`，最前面的配置是默认配置，不需要指定Profile，后面的每段配置都必须以spring.profiles: xxx开头，表示一个Profile。上述配置默认使用8080端口，但是在test环境下，使用8000端口，在production环境下，使用80端口，并且启用Pebble的缓存。
 
-假设我们需要一个存储服务，在本地开发时，直接使用文件存储即可，但是，在测试和生产环境，需要存储到云端如S3上，如何通过Profile实现该功能？
+如果我们不指定任何Profile，直接启动应用程序，那么Profile实际上就是default，可以从Spring Boot启动日志看出：
+
+```test
+2020-09-27 21:01:23.650  INFO 14980 --- [  restartedMain] com.itranswarp.learnjava.Application     : No active profile set, falling back to default profiles: default
+```
+
+要以test环境启动，可输入如下命令：
+
+```test
+java -Dspring.profiles.active=test -jar springboot-profiles-1.0-SNAPSHOT.jar
+```
+
+```test
+2020-09-27 21:02:59.462  INFO 9908 --- [  restartedMain] com.itranswarp.learnjava.Application     : The following profiles are active: test
+```
+
+从日志看到活动的Profile是test，Tomcat的监听端口是8000。
+
+**IDEA可以直接在启动配置中指定环境变量`VM options: -Dspring.profiles.active=test`，切换环境时，会覆盖default环境中的相同配置，其余配置仍按照default环境中的配置**。
+
+通过Profile可以实现一套代码在不同环境启用不同的配置和功能。假设我们需要一个存储服务，在本地开发时，直接使用文件存储即可，但是，在测试和生产环境，需要存储到云端如S3上，如何通过Profile实现该功能（这其实在Spring的条件装配章节当中已经实践过了）？
 
 ```java
 // 定义存储接口StorageService：
@@ -428,9 +507,11 @@ public class CloudStorageService implements StorageService {
 
 ## 使用Conditional
 
+- Spring Boot提供了几个非常有用的条件装配注解，可实现灵活的条件装配。
+
 使用Profile能根据不同的Profile进行条件装配，但是Profile控制比较糙，如果想要**精细控制**，例如，配置本地存储，AWS存储和阿里云存储，将来很可能会增加Azure存储等，用Profile就很难实现。
 
-Spring本身提供了条件装配@Conditional，但是要**自己编写**比较复杂的Condition来做判断，比较麻烦。Spring Boot则为我们准备好了几个非常有用的条件：
+Spring本身提供了条件装配@Conditional，但是要**自己编写**比较复杂的Condition来做判断，比较麻烦。Spring Boot则为我们准备好了几个非常有用的条件，**可直接在注解当中实现条件判断**：
 
 - @ConditionalOnProperty：如果有指定的配置，条件生效；
 - @ConditionalOnBean：如果有指定的Bean，条件生效；
@@ -440,6 +521,7 @@ Spring本身提供了条件装配@Conditional，但是要**自己编写**比较�
 - @ConditionalOnExpression：根据表达式判断条件是否生效。
 
 ```yml
+# 尝试从环境变量当中获取STORAGE_TYPE:
 storage:
   type: ${STORAGE_TYPE:local}
 ```
@@ -465,11 +547,45 @@ public class AliyunStorageService implements StorageService {
 
 ## 加载配置文件
 
-> Spring Boot提供了@ConfigurationProperties注解，可以非常方便地把一段配置加载到一个Bean中。
+- Spring Boot提供了@ConfigurationProperties注解，可以非常方便地把一段配置加载到一个Bean中（Spring的@Value是将配置一一放到属性上）。
 
-多次使用@Value引用同一个配置项不但麻烦，而且@Value使用字符串，缺少编译器检查，容易造成多处引用不一致。
+加载配置文件可以直接使用注解@Value，例如，我们定义了一个最大允许上传的文件大小配置：
 
-为了更好地管理配置，Spring Boot允许创建一个Bean，持有一组配置，并由Spring Boot自动注入。
+```yml
+storage:
+  local:
+    max-size: 102400
+```
+
+在某个FileUploader里，需要获取该配置，可使用@Value注入：
+
+```java
+@Component
+public class FileUploader {
+    @Value("{storage.local.max-size:102400}")
+    int maxSize;
+
+    ...
+}
+```
+
+在另一个UploadFilter中，因为要检查文件的MD5，同时也要检查输入流的大小，因此，也需要该配置：
+
+```java
+@Component
+public class UploadFilter implements Filter {
+    @Value("{storage.local.max-size:100000}")
+    int maxSize;
+
+    ...
+}
+```
+
+**多次使用@Value引用同一个配置项不但麻烦，而且@Value使用字符串，缺少编译器检查，容易造成多处引用不一致**。
+
+**为了更好地管理配置，Spring Boot允许创建一个Bean，持有一组配置，并由Spring Boot自动注入**。
+
+假设我们在application.yml中添加了如下配置：
 
 ```yml
 storage:
@@ -484,7 +600,10 @@ storage:
     allow-types: jpg, png, gif
 ```
 
+定义一个Java Bean，持有该组配置，保证Java Bean的属性名称与配置一致即可：
+
 ```Java
+// 注意这里不是@Component:
 @Configuration
 @ConfigurationProperties("storage.local")
 public class StorageConfiguration {
@@ -496,6 +615,11 @@ public class StorageConfiguration {
 
     // TODO: getters and setters
 }
+```
+
+注意到`@ConfigurationProperties("storage.local")`表示将从配置项storage.local读取该项的所有子项配置，并且，`@Configuration`表示StorageConfiguration也是一个Spring管理的Bean，可直接注入到其他Bean中：
+
+```java
 @Component
 public class StorageService {
     final Logger logger = LoggerFactory.getLogger(getClass());

@@ -923,6 +923,9 @@ public class MailService {
 
 ## 使用条件装配
 
+- Spring允许通过@Profile配置不同的Bean；
+- Spring还提供了@Conditional来进行条件装配，Spring Boot在此基础上进一步提供了基于配置、Class、Bean等条件进行装配。
+
 开发应用程序时，我们会使用开发环境，例如，使用内存数据库以便快速启动。而运行在生产环境时，我们会使用生产环境，例如，使用MySQL数据库。**如果应用程序可以根据自身的环境做一些适配，无疑会更加灵活**。
 
 **Spring为应用程序准备了Profile这一概念，用来表示不同的环境**。例如，我们分别定义开发、测试和生产这3个环境：native；test；production。
