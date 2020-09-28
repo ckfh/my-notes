@@ -640,13 +640,16 @@ public class StorageService {
 
 ## 禁用自动配置并配置多数据源
 
-> 可以通过@EnableAutoConfiguration(exclude = {...})指定禁用的自动配置；可以通过@Import({...})导入自定义配置。
+- 可以通过@EnableAutoConfiguration(exclude = {...})指定禁用的自动配置；
+- 可以通过@Import({...})导入自定义配置。
 
-Spring Boot大量使用自动配置和默认配置，极大地减少了代码，通常只需要加上几个注解，并按照默认规则设定一下必要的配置即可。例如，配置JDBC，默认情况下，只需要配置一个spring.datasource，Spring Boot就会自动创建出DataSource、JdbcTemplate、DataSourceTransactionManager，非常方便。
+Spring Boot大量使用自动配置和默认配置，极大地减少了代码，通常只需要加上几个注解，并按照默认规则设定一下必要的配置即可。例如，配置JDBC，默认情况下，只需要配置一个spring.datasource（其中包含对应的数据源JDBC驱动），Spring Boot就会自动创建出DataSource、JdbcTemplate、DataSourceTransactionManager，非常方便。
 
 但是，有时候，我们又必须要禁用某些自动配置。例如，系统有**主从**两个数据库，而Spring Boot的自动配置只能配一个。这个时候，针对DataSource相关的自动配置，就必须关掉。
 
 [主从数据库目的](https://zhuanlan.zhihu.com/p/50597960)
+
+我们需要用exclude指定需要关掉的自动配置：
 
 ```java
 @SpringBootApplication
@@ -656,6 +659,8 @@ public class Application {
     ...
 }
 ```
+
+现在，Spring Boot不再给我们自动创建DataSource、JdbcTemplate和DataSourceTransactionManager了，后面两者需要依赖前者才能创建，现在前者现在不创建了，后面两者也不会创建，要实现主从数据库支持，怎么办？
 
 让我们一步一步开始编写支持主从数据库的功能。首先，我们需要把主从数据库配置写到application.yml中，仍然按照Spring Boot默认的格式写，但datasource改为datasource-master和datasource-slave：
 
@@ -680,6 +685,7 @@ spring:
 // 创建两个HikariCP的DataSource：
 public class MasterDataSourceConfiguration {
     @Bean("masterDataSourceProperties")
+    // 从此处可以看出@ConfigurationProperties注解还可以为返回的bean注解注入属性:
     @ConfigurationProperties("spring.datasource-master")
     DataSourceProperties dataSourceProperties() {
         return new DataSourceProperties();
@@ -711,7 +717,11 @@ public class SlaveDataSourceConfiguration {
 public class Application {
     ...
 }
-// 还需要一个最终的@Primary标注的DataSource，它采用Spring提供的AbstractRoutingDataSource，代码实现如下：
+```
+
+此外，上述两个DataSource的Bean名称分别为masterDataSource和slaveDataSource，我们还需要一个最终的@Primary标注的DataSource，它采用Spring提供的AbstractRoutingDataSource，代码实现如下：
+
+```java
 class RoutingDataSource extends AbstractRoutingDataSource {
     @Override
     protected Object determineCurrentLookupKey() {
@@ -720,6 +730,87 @@ class RoutingDataSource extends AbstractRoutingDataSource {
     }
 }
 ```
+
+RoutingDataSource本身并不是真正的DataSource，它通过Map关联一组DataSource，下面的代码创建了包含两个DataSource的RoutingDataSource，关联的key分别为masterDataSource和slaveDataSource：
+
+```java
+public class RoutingDataSourceConfiguration {
+    @Primary
+    @Bean
+    DataSource dataSource(
+            @Autowired @Qualifier("masterDataSource") DataSource masterDataSource,
+            @Autowired @Qualifier("slaveDataSource") DataSource slaveDataSource) {
+        var ds = new RoutingDataSource();
+        // 关联两个DataSource:
+        ds.setTargetDataSources(Map.of(
+                "masterDataSource", masterDataSource,
+                "slaveDataSource", slaveDataSource));
+        // 默认使用masterDataSource:
+        ds.setDefaultTargetDataSource(masterDataSource);
+        return ds;
+    }
+
+    @Bean
+    JdbcTemplate jdbcTemplate(@Autowired DataSource dataSource) {
+        return new JdbcTemplate(dataSource);
+    }
+
+    @Bean
+    DataSourceTransactionManager dataSourceTransactionManager(@Autowired DataSource dataSource) {
+        return new DataSourceTransactionManager(dataSource);
+    }
+}
+```
+
+仍然需要自己创建JdbcTemplate和PlatformTransactionManager，注入的是标记为@Primary的RoutingDataSource。
+
+这样，我们通过如下的代码就可以切换RoutingDataSource底层使用的真正的DataSource：
+
+```java
+RoutingDataSourceContext.setDataSourceRoutingKey("slaveDataSource");
+jdbcTemplate.query(...);
+```
+
+只不过写代码切换DataSource即麻烦又容易出错，更好的方式是通过注解配合AOP实现自动切换，这样，客户端代码实现如下：
+
+```java
+@Controller
+public class UserController {
+    @RoutingWithSlave // <-- 指示在此方法中使用slave数据库
+    @GetMapping("/profile")
+    public ModelAndView profile(HttpSession session) {
+        ...
+    }
+}
+```
+
+实现上述功能需要编写一个@RoutingWithSlave注解，一个AOP织入和一个ThreadLocal来保存key。由于代码比较简单，这里我们不再详述。
+
+如果我们想要确认是否真的切换了DataSource，可以覆写determineTargetDataSource()方法并打印出DataSource的名称：
+
+```java
+class RoutingDataSource extends AbstractRoutingDataSource {
+    ...
+
+    @Override
+    protected DataSource determineTargetDataSource() {
+        DataSource ds = super.determineTargetDataSource();
+        logger.info("determin target datasource: {}", ds);
+        return ds;
+    }
+}
+```
+
+访问不同的URL，可以在日志中看到两个DataSource，分别是HikariPool-1和hikariPool-2：
+
+```text
+```
+
+我们用一个图来表示创建的DataSource以及相关Bean的关系：
+
+<img src="./image/多数据源.png">
+
+注意到DataSourceTransactionManager和JdbcTemplate引用的都是RoutingDataSource，所以，这种设计的一个限制就是：在一个请求中，一旦切换了内部数据源，在同一个事务中，不能再切到另一个，否则，DataSourceTransactionManager和JdbcTemplate操作的就不是同一个数据库连接。
 
 ## 添加Filter
 
