@@ -12,7 +12,7 @@
 1. 在BIOS面板中把一些看似虚拟化技术支持的功能enable并重启后，在CPU面板仍看到虚拟化已禁止。解决方案：在开启适用于Linux的Windows子系统、虚拟机平台功能并重启后，发现虚拟化已启用。
 2. 下载image非常之慢。解决方案：前往阿里云控制台启用镜像加速服务，使用其中用于Docker加速的源。
 
-## 命令
+## 常用命令
 
 ```bash
 # 拉取最新镜像
@@ -21,6 +21,13 @@ docker pull redis:latest
 docker run -itd --name redis-test -p 6379:6379 redis
 # 运行/bin/bash程序打开Linux系统的shell界面
 docker exec -it redis-test /bin/bash
+```
+
+```bash
+# 查看所有容器
+docker ps -a
+# 查看所有镜像
+docker images
 ```
 
 ## Redis镜像原理
