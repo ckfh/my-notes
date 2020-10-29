@@ -619,7 +619,7 @@ Spring只根据Annotation查找**无参数**方法，对方法名不作要求，
 
 默认情况下，对一种类型的Bean，容器只创建一个实例。但有些时候，我们需要对一种类型的Bean创建多个实例。例如，同时连接多个数据库，就必须创建多个DataSource实例。
 
-如果我们在@Configuration类中创建了多个**同类型（和注入List章节里不同实现类作比较，从BeanID的角度去思考）**的Bean：
+如果我们在@Configuration类中创建了多个**同类型**（和注入List章节里不同实现类作比较，从BeanID的角度去思考）的Bean：
 
 ```Java
 @Configuration

@@ -1,5 +1,21 @@
 # 记录
 
+## 集合和数组工具类都有相应的二分查找元素的方法
+
+```java
+Arrays.binarySearch
+Collections.binarySearch
+```
+
+## 将一个整型数组转换为整型集合
+
+```java
+// Arrays.stream(arr) 返回 IntStream
+// IntStream.boxed 返回一个 Stream，其元素都被包装为 Integer
+// 最后转换为整型包装类集合
+List<Integer> list = Arrays.stream(arr).boxed.collect(Collectors.toList());
+```
+
 ## throw和return
 
 抛出错误和返回结果都会结束当前方法的执行流程。
