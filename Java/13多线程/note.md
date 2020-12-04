@@ -1,5 +1,17 @@
 # 多线程
 
+## 文章总结
+
+sleep(3000)和wait(3000)的区别在于前者实打实waiting了3s，后者则是中途可以被notify，可能无法waiting到3s。
+
+- 多线程同步(竞争)：synchronized(ReentrantLock)，后者可以尝试获取锁，无需一直等待。
+- 多线程协调：wait/notifyAll(Condition)，wait/notifyAll只能用于synchronized代码块内。
+- 读多写少：ReadWriteLock。
+- 乐观读锁：StampedLock。
+- 并发集合：ArrayBlockingQueue，队列满时放入将阻塞，队列空时取出将阻塞。
+- 线程池：ThreadPoolExecutor。
+- 阻塞等待异步执行的结果：Future。
+
 ## 多线程基础
 
 在计算机中，我们把**一个任务称为一个进程**，浏览器就是一个进程，视频播放器是另一个进程，类似的，音乐播放器和Word都是进程。
