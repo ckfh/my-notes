@@ -10,11 +10,13 @@
 
 ## 官网教程
 
-- 所有由单个命令实现的Redis操作都具有原子性，包括对更复杂数据结构的操作。所以当你使用Redis命令修改一些值，不必考虑并发问题。
+- **所有由单个命令实现的Redis操作都具有原子性**，包括对更复杂数据结构的操作。所以当你使用Redis命令修改一些值，不必考虑并发问题。
+
+### 基本操作
 
 ```bash
 SET server:name "fido"
-GET server:name
+GET server:name # "fido"
 EXISTS server:name # 1表示存在，0表示不存在
 ```
 
@@ -22,29 +24,32 @@ EXISTS server:name # 1表示存在，0表示不存在
 SET connections 10
 INCR connections
 DEL connections
-INCRBY connections 100
+INCRBY connections 100 # 增加100
 DECR connections
 DECRBY connections 10
 
 SET connections 10
 DEL connections # 1表示操作成功
 GET connections # nil
-INCR connections # 1表示值为1，因此我没必要先新建一个key为0，然后进行加1操作，可以直接进行加1操作，如果key不存在则新建，变成了单命令的原子操作
+INCR connections # 1表示值为1，因此我没必要先新建一个key并映射0，然后进行加1操作，可以直接进行加1操作，如果key不存在则新建，变成了单命令的原子操作
 ```
 
 ```bash
 SET resource:lock "Redis Demo"
 EXPIRE resource:lock 120 # 设置一个key的过期时间
 TTL resource:lock # 返回直到被删除的秒数，-2表示不存在，-1表示永久存在
+SET resource:lock "Redis Demo2" # 如果再次设置该键，则其过期时间需要重新设置
 
 SET resource:lock "Redis Demo 3" EX 5 # 设置值的同时设置TTL
 PERSIST resource:lock # 取消过期时间
 ```
 
+### 列表
+
 ```bash
 RPUSH friends "Alice" # 直接新建一个list并添加元素
-LPUSH friends "Sam"
-RPUSH friends 1 2 3 # 指定多个元素
+LPUSH friends "Sam" # 添加元素的同时会返回当前list长度
+RPUSH friends 1 2 3 # 添加多个元素
 
 LRANGE friends 0 -1
 LRANGE friends 0 1
@@ -52,15 +57,16 @@ LRANGE friends 1 2
 
 LPOP friends # 删除并返回给客户端
 RPOP friends
-LLEN friends
+LLEN friends # 返回list长度
 
-LPUSH mylist someelement # 从开头添加一个元素
 LTRIM mylist 0 99 # 修剪列表，保留0-99共100个元素，这样可以确保list当中元素不会超过100个
 ```
 
+### 无序集合
+
 ```bash
 SADD superpowers "flight" # 直接新建一个set并添加元素，1表示添加成功，0表示已存在无法添加
-SADD superpowers "x-ray vision" "reflexes" # 同样可以指定多个元素
+SADD superpowers "x-ray vision" "reflexes" # 同样可以指定多个元素，将返回添加成功的元素个数
 SREM superpowers "reflexes" # 移除一个指定元素，1表示存在，0表示不存在
 SMEMBERS superpowers
 SISMEMBER superpowers "flight"
@@ -72,22 +78,26 @@ SCARD myset # 返回set当中的个数
 SINTER myset1 myset2 # 返回交集
 ```
 
+### 有序集合
+
 ```bash
 ZADD hackers 1912 "Alan Turing" # 新建一个有序set，每个元素都有一个关联score，根据这个score进行排序，score相同则作string比较
-ZADD hackers 1957 "Sophie Wilson" # 不能添加重复元素，但是能更新score
+ZADD hackers 1957 "Sophie Wilson" # 如果已存在相同元素，则更新该元素的score
 ZADD hackers 1916 "Claude Shannon"
 ZRANGE hackers 0 -1
 ZSCORE hackers "Alan Turing"
 ```
 
+### 散列
+
 ```bash
-HSET user:1000 name "John Smith" # 新建一个map(user:1000)，并添加一个string field及其对应的string value
+HSET user:1000 name "John Smith" # 新建一个hash(user:1000)，并添加一个string field及其对应的string value
 HGETALL user:1000
-HMSET user:1001 name "Mary Jones" password "hidden" email "mjones@example.com" # 新建并添加多个field和value
+HMSET user:1001 name "Mary Jones" password "hidden" email "mjones@example.com" # 新建并添加多个string field和string value
 HGET user:1001 name
 
-HSET user:1000 visits 10
-HINCRBY user:1000 visits 1
+HSET user:1000 visits 10 # 设置一个数值类型的字段值
+HINCRBY user:1000 visits 1 # 对于数值类型的字段值存在自增操作
 HINCRBY user:1000 visits 10
 HDEL user:1000 visits
 HINCRBY user:1000 visits 1

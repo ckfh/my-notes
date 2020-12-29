@@ -1,5 +1,11 @@
 # 记录
 
+## 对优先级队列进行迭代不保证某种顺序
+
+优先级队列只有在使用 poll() 和 peek() 方法时保证返回优先级最高的那一个元素，而对其进行迭代时不保证特定顺序。
+
+> Returns an iterator over the elements in this queue. The iterator does not return the elements in any particular order.
+
 ## 线程池命名
 
 在项目中导入数据库连接池驱动时，因为其本质上是一个线程池，因此后续手动创建的线程池的默认命名不会从1开始，因为1号线程池是数据库连接池，而一般手动创建的线程池需要给定一个有意义的命名，方便回溯线程以及线程池。
