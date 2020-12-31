@@ -144,3 +144,124 @@ posts:1000 => a List of post ids - every new post is LPUSHed here.
 HSET user:1000 auth fea5e81ac8ca77622bed1c2132a021f9
 HSET auths fea5e81ac8ca77622bed1c2132a021f9 1000
 ```
+
+## 数据类型
+
+### 字符串
+
+字符串值可以用于缓存HTML页面和图片，但大小不能超过512MB。
+
+```bash
+SET mykey newval nx # 如果键存在则赋值失败
+SET mykey newval nx # 即使键存在赋值仍成功
+
+SET counter 100
+INCR counter # 将字符串值解析为整型，对其加一，将最后获得值设为新值，其它增减操作同理
+
+GETSET user:counter 0 # GETSET在设置新值时同时获取旧值，搭配INCR可以实现记录网站每小时的访客次数
+INCR user:counter
+INCR user:counter
+GETSET user:counter 0 # 2
+
+# 批量设置和批量获取可以有效减少延迟
+MSET a 10 b 20 c 30
+MGET a b c
+```
+
+### 修改和查询键空间
+
+```bash
+exists mykey
+del mykey
+type mykey # 查询值类型
+```
+
+### 键过期
+
+- They can be set both using seconds or milliseconds precision.
+- However the expire time resolution is always 1 millisecond.
+- Information about expires are replicated and persisted on disk, the time virtually passes when your Redis server remains stopped (this means that Redis saves the date at which a key will expire).
+
+上述第三点的意思是，即使 Redis 服务器停止工作，其之后的时间仍然会被计算在过期时间内。
+
+```bash
+expire key 5 # expire指令可以给已有过期时间的键设置一个新的过期时间
+```
+
+### 列表
+
+Redis 列表底层存储结构是链表，**理由是对于一个数据库系统而言，至关重要的就是能够以非常快的方式将元素添加到很长的列表中**。缺点就是那个缺点，按索引访问时慢。
+
+Redis 列表的一个强大优势是能够在恒定时间内获取恒定长度的列表。
+
+当需要访问大量元素的中间部分很重要时，可以使用 Sorted sets。
+
+```bash
+rpush mylist 1 2 3 4 5 "foo bar" # push操作支持可变参数
+```
+
+### 列表的常见用例
+
+以下是两个非常有代表性的用例：
+
+- 记住用户发布到社交网络上的最新更新。
+- 生产者和消费者模式。Redis 具有特殊的列表命令，以使此用例更可靠和高效。
+
+为了逐步描述一个常见的用例，假设您的主页显示了在照片共享社交网络中发布的最新照片，并且您想加快访问速度。
+
+- 每次用户发布新照片时，我们使用`LPUSH`将其ID添加到列表中。
+- 当用户访问主页时，我们使用`LRANGE 0 9`获取最新发布的10个项目。
+
+### 限制列表
+
+```bash
+rpush mylist 1 2 3 4 5
+ltrim mylist 0 2 # 仅保留范围内的元素并丢弃其它元素
+lrange mylist 0 -1
+```
+
+一个简单而有用的方式就是使用`lpush`和`ltrim`添加新元素并丢弃超出限制的元素。之后使用`lrange`访问最新的元素，而无需记住非常旧的数据。
+
+> Note: while LRANGE is technically an O(N) command, accessing small ranges towards the head or the tail of the list is a constant time operation.
+
+### 列表的阻塞操作
+
+仅用`lpush`和`rpop`就可以实现生产者-消费者模式，但是`rpop`命令缺点就是在列表为空时需要轮询重试。
+
+Redis 提供了阻塞版本的`pop`命令，`brpop`和`blpop`，这两个命令在列表为空时将阻塞，或者在超过指定时间后返回空。
+
+```bash
+brpop tasks 5 # 如果5秒后没有可用元素，则返回
+```
+
+上述指令在`timeout`参数为零时将永久等待元素到来，而且该指令可以指定多个列表同时等待，并在其中一个列表收到第一个元素时返回（按照参数顺序）。
+
+`brpop`会返回两个值，第一个值是列表名，第二个值是元素，因为该命令可以同时等待多个列表，需要有一个返回值进行表述。
+
+`lmove`于`6.2.0`版本提供，用于构建更安全的队列和旋转队列，`blmove`是它的阻塞版本。
+
+### 自动创建和删除键
+
+适用于多元素组成的数据类型——Lists, Streams, Sets, Sorted Sets and Hashes.
+
+1. 当我们将元素添加到聚合数据类型时，如果目标键不存在，则在添加元素之前会创建一个空的聚合数据类型。
+2. 当我们从聚合数据类型中删除元素时，如果该值保持为空，则键将自动销毁。流数据类型是此规则的唯一例外。
+
+    ```bash
+    lpush mylist 1 2 3
+    exists mylist # 1
+    lpop mylist
+    lpop mylist
+    lpop mylist
+    exists mylist # 0
+    ```
+
+3. 调用只读命令，如`llen`(它返回列表的长度)，或使用空键删除元素的写命令，都会产生相同的结果，就好像该键持有命令期望找到的空聚合类型一样。
+
+    ```bash
+    del mylist
+    llen mylist # 0
+    lpop mylist # nil
+    ```
+
+### 哈希映射
