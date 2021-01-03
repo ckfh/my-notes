@@ -265,3 +265,115 @@ brpop tasks 5 # 如果5秒后没有可用元素，则返回
     ```
 
 ### 哈希映射
+
+```bash
+hincrby user:1000 birthyear 10 # 哈希映射字段同样支持自增操作
+```
+
+> It is worth noting that small hashes (i.e., a few elements with small values) are encoded in special way in memory that make them very memory efficient.
+
+### 集合
+
+集合是字符串的无序集合。**集合非常重要的特性就是可以计算交集、并集、差集**。
+
+集合很适合表达对象之间的关系。例如，我们可以很容易地使用集合来实现标记。比如为我们想要标记的每个对象设置一个集合。该集合包含与对象相关联的标记的ID。
+
+其中一个例子是给新闻文章加标签。假设我们有一个标签ID映射到标签名称的哈希映射。
+
+```bash
+sadd news:1000:tags 1 2 5 77 # 第1000号新闻的标签是1、2、5、77
+sadd tags:1:news 1000 # 反向关联标签和新闻
+sadd tags:2:news 1000
+sadd tags:5:news 1000
+sadd tags:77:news 1000
+sinter tags:1:news tags:2:news tags:5:news tags:77:news # 使用交集寻找包含参数标签的新闻
+```
+
+还有一个例子是扑克牌游戏。
+
+```bash
+sadd deck C1 C2 C3 C4 C5 C6 C7 C8 C9 C10 CJ CQ CK ...
+spop deck 5 # 从52张扑克牌当中随机弹出5张牌给玩家
+# 直接弹出则在下一局游戏开始时需要重新填充集合，一种更好的做法是使用sunionstore，
+# 它可以执行多个集合之间的并集并将结果存储到目标集合当中，由于此处只有单个集合，
+# 因此实现了复制牌组到第一局牌组的效果。
+sunionstore game:1:deck deck
+scard game:1:deck # 查看集合数量
+srandmember game:1:deck 5 # 实现随机返回5个非重复元素，参数为负数将随机返回5个可能重复的元素
+```
+
+### 排序集
+
+> Sorted sets are a data type which is similar to a mix between a Set and a Hash. Like sets, sorted sets are composed of unique, non-repeating string elements, so in some sense a sorted set is a set as well.  
+> However while elements inside sets are not ordered, every element in a sorted set is associated with a floating point value, called the score (this is why the type is also similar to a hash, since every element is mapped to a value).
+
+排序规则如下：
+
+- 如果A和B具有两个不同的score，则谁的score大谁排在后面。
+- 如果score相同，则考虑两个字符串在字典序上的排序，因为不会存在相同元素，因此肯定可以进行排序。
+
+> Implementation note: Sorted sets are implemented via a dual-ported data structure containing both a skip list and a hash table, so every time we add an element Redis performs an O(log(N)) operation.
+
+```bash
+zrange hackers 0 -1 # 正序输出
+zrange hackers 0 -1 withscores # 顺带输出score
+zrevrange hackers 0 -1 # 倒序输出
+```
+
+### 排序集的范围操作
+
+```bash
+zrangebyscore hackers -inf 1950 # 输出所有出生年份在1950（包含）以内的个人
+zramrangebyscore hackers 1940 1960 # 删除范围之内的元素并返回删除数量
+zrank hackers "Anita Borg" # 输出其在有序集合当中的位置
+zrevrank hackers "Anita Borg" # 反向输出其在有序集合当中的位置
+```
+
+### 排序集的字典序
+
+在 Redis 的2.8版本引入了一个新功能：按照字典序去获取排序集的范围元素。
+
+字典序的内部实现方式是通过C语言当中`memcmp`函数。
+
+```bash
+zadd hackers 0 "Alan Kay" 0 "Sophie Wilson" 0 "Richard Stallman" 0 # 分数相同，将按照字典序进行排序
+zrangebylex hackers [B [P # 获取开头从B到P的黑客名字，注意[是闭区间的意思，相应存在(表示开区间
+```
+
+这个特性很重要，因为它允许我们使用排序集作为泛型索引。例如，如果你想用一个128位的无符号整数参数索引元素，你所需要做的就是用相同的分数(例如0)将元素添加到一个排序的集合中，但是有一个16字节的前缀，由128位的大端数组成。由于大端中的数字在按字典顺序排序时(按原始字节顺序)实际上也是按数字顺序排序的，所以您可以请求128位空间中的范围，并获得丢弃前缀的元素值。
+
+### 排序集更新分数：排行榜
+
+排序集的score可以随时更新。仅对已经包含在排序集中的元素调用ZADD，就会以`O(log(N))`的时间复杂度更新其score(和位置)。因此，排序集适用于有大量更新的情况。
+
+由于这个特点，一个常见的用例就是排行榜。典型的应用是一款Facebook游戏，你结合了根据高分对用户进行排序的功能，再加上`zrank`操作，以便显示排名前n的用户和用户在排行榜上的排名(例如，“你在这里获得了第4932位的最佳分数”)。
+
+### 位图
+
+位图不是实际的数据类型，而是String类型上定义的一组面向位的操作。
+
+> Since strings are binary safe blobs and their maximum length is 512 MB, they are suitable to set up to 2^32 different bits.
+
+位图的优点之一是，在存储信息时通常可以节省大量的空间。例如：在以增量用户ID表示不同用户的系统中，仅使用512MB内存就可以记住40亿用户的信息。
+
+```bash
+setbit key 10 1 # 设置第10位为1，如果地址位超出当前字符串长度，该命令会自动扩大字符串
+getbit key 10 # 1
+getbit key 11 # 0
+getbit key 0 # 0
+```
+
+1. `bitop`在不同字符串之间执行位操作，`AND`、`OR`、`XOR`、`NOT`。
+2. `bitcount`计算位为1的数量。
+3. `bitops`找到位为1或0的第一个位置。
+
+### HyperLogLog
+
+用于快速统计非重复元素的一种概率数据结构。
+
+```bash
+pfadd hll a b c d a b c d e
+pfcount 5
+```
+
+常见用例是计算用户每天在搜索表单当中执行的唯一查询。
