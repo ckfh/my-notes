@@ -118,7 +118,7 @@ Java Web的基础：Servlet容器，以及标准的Servlet组件：
 
 <img src="./image/rest-通俗版.png">
 
-在Web应用中，除了需要使用MVC给用户显示页面外，还有一类API接口，我们称之为REST，通常输入输出都是JSON，**便于第三方调用或者使用页面JavaScript与之交互**。
+**在Web应用中，除了需要使用MVC给用户显示页面外，还有一类API接口，我们称之为REST，通常输入输出都是JSON，便于第三方调用或者使用页面JavaScript与之交互**。
 
 直接在Controller中处理JSON是可以的，因为Spring MVC的@GetMapping和@PostMapping都支持指定输入和输出的格式。如果我们想接收JSON，输出JSON，那么可以这样写：
 
@@ -138,7 +138,7 @@ public class RestController {
 
 对应的Maven工程需要加入Jackson这个依赖。
 
-**注意到@PostMapping使用consumes声明能接收的类型，使用produces声明输出的类型，并且额外加了@ResponseBody表示返回的String无需额外处理，直接作为输出内容写入HttpServletResponse。输入的JSON则根据注解@RequestBody直接被Spring反序列化为User这个JavaBean**。
+**注意到@PostMapping使用consumes声明能接收的类型，使用produces声明输出的类型，并且额外加了@ResponseBody表示返回的String无需额外处理（比如不要将字符串内容当作重定向地址），直接作为输出内容写入HttpServletResponse。输入的JSON则根据注解@RequestBody直接被Spring反序列化为User这个JavaBean**。
 
 <img src="./image/rest-request.png">
 
@@ -378,7 +378,7 @@ Filter组件是由Servlet容器进行管理的，它在Spring MVC的Web应用程
 
 所以，Interceptor的拦截范围其实就是Controller方法，它实际上就相当于基于AOP的方法拦截。因为Interceptor只拦截Controller方法，所以要注意，返回ModelAndView后，后续对View的**渲染**就脱离了Interceptor的拦截范围。
 
-使用Interceptor的好处是Interceptor本身是Spring管理的Bean，因此注入任意Bean都非常简单（可以理解为在上一节我们为了使用UserService的业务，必须将其定义为一个Spring容器组件，然后在web.xml间接引用为一个Servlet组件Filter）。此外，可以应用多个Interceptor，并通过简单的@Order指定顺序（这也是个好处，可以指定顺序）。我们先写一个LoggerInterceptor：
+使用Interceptor的好处是Interceptor本身是Spring管理的Bean，因此注入任意Bean都非常简单（可以理解为在上一节我们为了使用UserService的业务，必须将AuthFilter定义为一个Spring容器组件，然后在web.xml间接引用为一个Servlet组件Filter）。此外，可以应用多个Interceptor，并通过简单的@Order指定顺序（这也是个好处，可以指定顺序）。我们先写一个LoggerInterceptor：
 
 ```Java
 @Order(1)
@@ -442,6 +442,7 @@ public void postHandle(HttpServletRequest request, HttpServletResponse response,
                         ModelAndView modelAndView) throws Exception {
     logger.info("postHandle {}.", request.getRequestURI());
     if (modelAndView != null) {
+        // 可以统一代替 return new ModelAndView("profile.html", Map.of("user", user)); 语句:
         modelAndView.addObject("user", request.getSession().getAttribute(UserController.KEY_USER));
         modelAndView.addObject("__time__", LocalDateTime.now());
     }
@@ -472,7 +473,7 @@ public class UserController {
 
 使用ExceptionHandler时，要注意它仅作用于**当前**的Controller，即ControllerA中定义的一个ExceptionHandler方法对ControllerB不起作用。
 
-ExceptionHandler比起afterCompletion就是它能够返回一个ModelAndView对象作为异常处理的结果（因为它也是一个Controller组件方法）。
+**ExceptionHandler比起afterCompletion就是它能够返回一个ModelAndView对象作为异常处理的结果（因为它也是一个Controller组件方法）**。
 
 如果我们有很多Controller，每个Controller都需要处理一些通用的异常，例如LoginException，思考一下应该怎么避免重复代码。
 
@@ -489,7 +490,7 @@ ExceptionHandler比起afterCompletion就是它能够返回一个ModelAndView对�
 
 **同源要求域名要完全相同（a.com和www.a.com不同）（域名相同URI可以不同，也就是说在同一个域名下对不同的URI发起请求），协议要相同（http和https不同），端口要相同**。
 
-如果A站的JavaScript访问B站API的时候，B站能够返回响应头`Access-Control-Allow-Origin: http://a.com`，那么，*浏览器*就允许A站的JavaScript访问B站的API。
+如果A站的JavaScript访问B站API的时候，B站能够返回响应头`Access-Control-Allow-Origin: http://a.com`，那么，**浏览器**就允许A站的JavaScript访问B站的API。
 
 注意到跨域访问能否成功，取决于B站是否愿意给A站返回一个正确的`Access-Control-Allow-Origin`响应头，所以决定权永远在提供API的服务方手中。
 
@@ -578,7 +579,8 @@ CookieLocaleResolver从HttpServletRequest中获取Locale时，**首先根据一�
 
 ## 异步处理
 
-> 简单来说就是在已有的线程内部启用一个新的线程来执行那些操作耗时的业务逻辑，而启用一个新的线程就体现了异步这一概念。
+> 简单来说就是在已有的线程内部启用一个新的线程来执行那些操作耗时的业务逻辑，而启用一个新的线程就体现了异步这一概念。  
+> 启用了异步处理支持时，Tomcat线程池线程只负责**请求解析**和**响应返回**，不再负责**业务处理**，业务处理交由内部的业务线程池线程进行。
 
 在Servlet模型中，每个请求都是由某个线程处理，然后，将响应写入IO流，发送给客户端。从开始处理请求，到写入响应完成，都是在同一个线程中处理的。
 
@@ -598,9 +600,9 @@ CookieLocaleResolver从HttpServletRequest中获取Locale时，**首先根据一�
 
 <img src="./image/异步请求.jpg">
 
-- 将请求信息解析为HttpServletRequest;
-- 分发到具体Servlet处理,将业务提交给自定义业务线程池，请求立刻返回，Tomcat线程立刻被释放;
-- 当业务线程将任务执行结束，将会将结果转交给Tomcat线程;
+- 将请求信息解析为HttpServletRequest；
+- **分发到具体Servlet处理，将业务提交给自定义业务线程池，请求立刻返回，Tomcat线程立刻被释放**；
+- **当业务线程将任务执行结束，将会将结果转交给Tomcat线程**；
 - 通过HttpServletResponse将响应结果返回给等待客户端。
 
 <img src="./image/异步请求优点.png">
@@ -698,6 +700,7 @@ public DeferredResult<User> user(@PathVariable("id") long id) {
     <filter>
         <filter-name>async-filter</filter-name>
         <filter-class>com.cat.web.AsyncFilter</filter-class>
+        <!-- 过滤含有异步处理的请求 -->
         <async-supported>true</async-supported>
     </filter>
 
@@ -718,7 +721,7 @@ public DeferredResult<User> user(@PathVariable("id") long id) {
 
 **不要用不支持异步处理的Filter去匹配内部是异步处理的Controller组件方法**。
 
-对于正常的同步请求，例如/api/version，我们可以看到如下输出，每个Filter和ApiController都是由同一个线程执行：
+对于正常的同步请求，例如/api/version，我们可以看到如下输出：
 
 ```text
 2020-09-20 20:26:19 [http-nio-8080-exec-8] INFO  c.i.learnjava.web.SyncFilter - start SyncFilter...
@@ -728,9 +731,20 @@ public DeferredResult<User> user(@PathVariable("id") long id) {
 2020-09-20 20:26:19 [http-nio-8080-exec-8] INFO  c.i.learnjava.web.SyncFilter - end SyncFilter.
 ```
 
-从上述输出可以看出请求接收、业务处理、响应返回，是在一个线程内**同步**执行的。
+从上述输出可以看出请求接收、业务处理、响应返回，是在一个线程内**同步**执行的，**如果每个请求的业务都是重量级业务，迟迟无法返回响应，释放不了线程，一旦耗尽线程池当中的所有线程，也就无法响应新的请求**。
 
-对于异步请求，例如/api/users，我们可以看到如下输出，AsyncFilter和ApiController是由同一个线程执行的，但是，返回响应的是另一个线程：
+对于异步请求，例如/api/users，我们可以看到如下输出：
+
+```test
+2021-01-05 14:55:41 [http-nio-8080-exec-3] INFO  c.i.learnjava.web.AsyncFilter - start AsyncFilter...
+2021-01-05 14:55:41 [http-nio-8080-exec-3] INFO  c.i.learnjava.web.ApiController - get users...
+2021-01-05 14:55:41 [http-nio-8080-exec-3] INFO  c.i.learnjava.web.AsyncFilter - end AsyncFilter.
+2021-01-05 14:55:44 [MvcAsync1] INFO  c.i.learnjava.web.ApiController - return users...
+```
+
+AsyncFilter和ApiController是由同一个线程执行的，但是ApiController内部的异步处理代码块(使用Callable返回了一个新线程)交由另外一个线程去执行并返回。
+
+对DeferredResult测试，可以看到如下输出：
 
 ```text
 2020-09-20 20:27:04 [http-nio-8080-exec-5] INFO  c.i.learnjava.web.AsyncFilter - start AsyncFilter...
@@ -738,7 +752,7 @@ public DeferredResult<User> user(@PathVariable("id") long id) {
 2020-09-20 20:27:05 [Thread-3] INFO  c.i.learnjava.web.ApiController - deferred result is set.
 ```
 
-从上述输出可以看出Tomcat线程池线程已经先执行完毕，随后在其内部**异步**启动的线程才执行，它的返回结果会由线程池线程来写入到响应当中返回（此处无具体输出）。
+同样，返回响应的是另一个线程。
 
 **在实际使用时，经常用到的就是DeferredResult，因为返回DeferredResult时，可以设置超时、正常结果和错误结果，易于编写比较灵活的逻辑**。
 
@@ -748,7 +762,7 @@ public DeferredResult<User> user(@PathVariable("id") long id) {
 
 ## 使用WebSocket
 
-WebSocket是一种基于HTTP的长链接技术。传统的HTTP协议是一种请求-响应模型，如果浏览器不发送请求，那么服务器无法主动给浏览器推送数据。如果需要定期给浏览器推送数据，例如股票行情，或者不定期给浏览器推送数据，例如在线聊天，基于HTTP协议实现这类需求，只能依靠浏览器的JavaScript定时轮询，效率很低且实时性不高。
+WebSocket是一种基于HTTP的长链接技术。**传统的HTTP协议是一种请求-响应模型，如果浏览器不发送请求，那么服务器无法主动给浏览器推送数据**。如果需要定期给浏览器推送数据，例如股票行情，或者不定期给浏览器推送数据，例如在线聊天，基于HTTP协议实现这类需求，只能依靠浏览器的JavaScript定时轮询，效率很低且实时性不高。
 
 因为HTTP本身是基于TCP连接的，所以，WebSocket在HTTP协议的基础上做了一个简单的升级，即建立TCP连接后，浏览器发送请求时，附带几个头：
 
