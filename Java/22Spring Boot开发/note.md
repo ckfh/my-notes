@@ -272,7 +272,7 @@ public class Application {
 
 **那么根据条件@ConditionalOnMissingBean(JdbcOperations.class)，Spring Boot就不会再创建一个重复的JdbcTemplate（因为JdbcOperations是JdbcTemplate的父类）**。
 
-可见，Spring Boot自动装配功能是通过自动扫描➕**条件装配**实现的，这一套机制在默认情况下工作得很好，**但是，如果我们要手动控制某个Bean的创建，就需要详细地了解Spring Boot自动创建的原理，很多时候还要跟踪XxxAutoConfiguration，以便设定条件使得某个Bean不会被自动创建**。
+可见，Spring Boot自动装配功能是通过**自动扫描**➕**条件装配**实现的，这一套机制在默认情况下工作得很好，**但是，如果我们要手动控制某个Bean的创建，就需要详细地了解Spring Boot自动创建的原理，很多时候还要跟踪XxxAutoConfiguration，以便设定条件使得某个Bean不会被自动创建**。
 
 ## 开发者工具
 
@@ -309,6 +309,8 @@ Spring Boot提供了一个开发者工具，可以监控classpath路径上的文
 
 ## 使用Actuator
 
+> Spring Boot提供了一个Actuator，可以方便地实现监控，并可通过Web访问特定类型的监控。
+
 JMX对Java应用程序包括JVM进行监控，使用JMX需要**把一些监控信息以MBean的形式**暴露给JMX Server。
 
 Spring Boot已经内置了一个监控功能，它叫Actuator，使用Actuator非常简单，只需添加如下依赖：
@@ -320,7 +322,7 @@ Spring Boot已经内置了一个监控功能，它叫Actuator，使用Actuator�
 </dependency>
 ```
 
-然后正常启动应用程序，Actuator会把它**能收集到的所有信息**都暴露给JMX。此外，Actuator还可以通过URL`/actuator/`挂载一些监控点，例如，输入`http://localhost:8080/actuator/health`，我们可以查看应用程序当前状态：
+然后正常启动应用程序，**Actuator会把它能收集到的所有信息都暴露给JMX**。此外，Actuator还可以通过URL`/actuator/`挂载一些监控点，例如，输入`http://localhost:8080/actuator/health`，我们可以查看应用程序当前状态：
 
 ```text
 {
@@ -511,7 +513,7 @@ public class CloudStorageService implements StorageService {
 
 使用Profile能根据不同的Profile进行条件装配，但是Profile控制比较糙，如果想要**精细控制**，例如，配置本地存储，AWS存储和阿里云存储，将来很可能会增加Azure存储等，用Profile就很难实现。
 
-Spring本身提供了条件装配@Conditional，但是要**自己编写**比较复杂的Condition来做判断，比较麻烦。Spring Boot则为我们准备好了几个非常有用的条件，**可直接在注解当中实现条件判断**：
+Spring本身提供了条件装配@Conditional，但是要**自己编写**比较复杂的Condition来做判断，比较麻烦。Spring Boot则为我们准备好了几个非常有用的条件，可直接在注解当中实现**条件判断**：
 
 - @ConditionalOnProperty：如果有指定的配置，条件生效；
 - @ConditionalOnBean：如果有指定的Bean，条件生效；
@@ -813,6 +815,8 @@ class RoutingDataSource extends AbstractRoutingDataSource {
 注意到DataSourceTransactionManager和JdbcTemplate引用的都是RoutingDataSource，所以，这种设计的一个限制就是：在一个请求中，一旦切换了内部数据源，在同一个事务中，不能再切到另一个，否则，DataSourceTransactionManager和JdbcTemplate操作的就不是同一个数据库连接。
 
 ## 添加Filter
+
+> 在Spring Boot中添加Filter更加方便，并且支持对多个Filter进行排序。
 
 Spring Boot会自动扫描所有的FilterRegistrationBean类型的Bean，然后，将它们返回的Filter自动注册到Servlet容器中，无需任何配置。
 
