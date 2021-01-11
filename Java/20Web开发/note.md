@@ -310,13 +310,11 @@ HttpServletResponse封装了一个HTTP响应。由于HTTP响应必须先发送He
 
 ### Servlet多线程模型
 
-一个Servlet类在服务器中只有一个实例，但对于每个HTTP请求，Web服务器会使用多线程执行请求（就像最开始我们自己写的TCP服务器那样使用多线程处理来自不同客户端的请求，想想来自不同客户端的请求同时到达服务器但是不使用多线程处理的糟糕场景）。
+一个Servlet类在服务器中只有一个实例，但对于每个HTTP请求，Web服务器会使用多线程来接收请求（就像最开始我们自己写的TCP服务器那样使用多线程处理来自不同客户端的请求，想想来自不同客户端的请求同时到达服务器但是不使用多线程处理的糟糕场景）。
 
-因此，一个Servlet的doGet()、doPost()等处理请求的方法是多线程并发执行的。如果Servlet中定义了成员字段，要注意多线程并发访问的问题。
+因此，一个Servlet的doGet()、doPost()等处理请求的方法可能会被多个线程并发执行。如果Servlet中定义了成员字段，要注意多线程并发访问的问题。
 
 对于每个请求，Web服务器会创建唯一的HttpServletRequest和HttpServletResponse实例，因此，HttpServletRequest和HttpServletResponse实例只有在当前处理线程中有效，它们总是局部变量，不存在多线程共享的问题（所以在doGet()、doPost()方法内部可以放心地对这两个实例进行读写操作，不用在意并发问题）。
-
-因此，要注意在一个线程内部多个组件对封装后的请求和响应对象进行操作时，操作的是同一个实例。例如：两个组件，前一个组件向Socket流中写入数据，后一个组件也向Socket流中写入数据，由于它们写入的就是同一个Socket流，最后客户端接收到的就是两个组件共同写入的数据。
 
 ```java
 public class HelloServlet extends HttpServlet {
@@ -328,6 +326,8 @@ public class HelloServlet extends HttpServlet {
     }
 }
 ```
+
+另外，要注意在一个线程内部多个组件对封装后的请求和响应对象进行操作时，操作的是同一个实例。例如：两个组件，前一个组件向Socket流中写入数据，后一个组件也向Socket流中写入数据，由于它们写入的就是同一个Socket流，最后客户端接收到的就是两个组件共同写入的数据。
 
 ## 重定向与转发
 
