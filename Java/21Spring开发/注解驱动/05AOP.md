@@ -1,5 +1,26 @@
 # AOP
 
+## 配置类的代理
+
+如果在调试过程中有留意，其实配置类也会被自动代理起来，即增强配置类，使得配置类当中的一些操作符合Spring容器的规范。
+
+例如以下代码:
+
+```java
+// 容器会自动将和参数对应的组件注入该方法，即使不在参数前加 @Autowired 注解。
+@Bean
+public void JdbcTemplate getJdbcTemplate(DataSource datasource) {
+    return new JdbcTemplate(datasource);
+}
+// 即使我们是通过调用另外一个成员方法的方式来注入对象，这个对象也会自动地从容器当中获取，而不是创建新的对象。
+@Bean
+public void JdbcTemplate getJdbcTemplate() {
+    return new JdbcTemplate(this.datasource());
+}
+```
+
+## 原理解析步骤
+
 原理解析三步骤：
 
 1. 给容器中注册了什么组件；
