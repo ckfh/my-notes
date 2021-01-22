@@ -605,7 +605,6 @@ storage:
 定义一个Java Bean，持有该组配置，保证Java Bean的属性名称与配置一致即可：
 
 ```Java
-// 注意这里不是@Component:
 @Configuration
 @ConfigurationProperties("storage.local")
 public class StorageConfiguration {
