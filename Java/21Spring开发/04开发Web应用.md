@@ -160,6 +160,8 @@ public class RestController {
 @RequestMapping(path = "/users", method = RequestMethod.GET)
 ```
 
+**注意在`RestController`当中，方法的返回值可以是各种可序列化类型，本质上是借助了第三方的序列化库来完成的**。
+
 ```Java
 @RestController
 @RequestMapping("/api")

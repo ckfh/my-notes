@@ -1,5 +1,18 @@
 # 记录
 
+## Servlet的URL Patterns
+
+[参考](https://help.perforce.com/hydraexpress/3.5.0/html/rwsfservletug/4-3.html)
+
+1. 容器更喜欢精确匹配，而不是通配符匹配。
+2. 容器更喜欢匹配长的URL Patterns。
+3. 其它URL Patterns无法匹配的请求都有`/`来进行匹配。
+4. `/`、`/*`、`/**`偏好程度依次递减。
+
+[参考](https://help.perforce.com/hydraexpress/3.5.0/html/rwsfservletug/4-8.html#482)
+
+1. Filter的URL Patterns通常写成`/*`、`/status/*`等形式，这是因为它按照的是**起始匹配**，即前者将过滤以`/`开头的请求，后者将过滤以`/status/*`开头的请求，因此本质上前者是包含后者的。
+
 ## 有关Spring中的@Autowired注解忽略问题
 
 我们知道，在Spring当中一些需要自动装入组件的地方如果我们不写@Autowired注解，容器也会自动帮我们从容器当中获取组件并注入，例如某组件构造方法参数需要其它组件，配置类当中@Bean方法参数是另一个组件，即使在这些位置我们不写@Autowired注解，容器也会帮我们自动注入容器当中的组件。
