@@ -1,5 +1,9 @@
 # 记录
 
+## 前后端分离
+
+所谓的前后端分离是指前端页面和后台服务器是由不同的开发人员进行开发的，开发人员之间通过定义各种接口规范，利用RestAPI以及JSON数据完成前后端交互。
+
 ## Servlet的URL Patterns
 
 [参考](https://help.perforce.com/hydraexpress/3.5.0/html/rwsfservletug/4-3.html)
