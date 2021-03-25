@@ -403,6 +403,20 @@ public class ForwardServlet extends HttpServlet {
 
 ## 使用Session（机制/服务端）和Cookie（形式/客户端）
 
+### 补充
+
+session和cookie，两者没联系，前者在服务端，后者在客户端，cookie就是一个含有键值对的集合，session也是一个含有键值对的集合。
+
+session的键都是统一的sessionID形式(很长的十六进制字符串)，通过ID找到对应的session对象并从中获取内容；cookie的键没有统一的形式，就是字符串键映射字符串值。
+
+两者建立联系的一个场景就是服务端为了维持与客户端的一个会话，由于HTTP是无状态的，在没有任何外界的帮助下，仅凭HTTP协议本身无法实现，所谓维持会话，就是说一个客户端在服务端可以留下自己的信息用来标识自己的每一次请求实际上都是从当前客户端而不是其它客户端发送的。
+
+因此我们可以在服务端为每一个客户端建立一个sessionID到session对象的映射，然后将sessionID发回给客户端，客户端将其保存在cookie集合中，其键名称固定为JSSESSIONID。这样每个客户端在发送请求时携带cookie集合发送，服务端取出其中的JSSESIONID到session集合中找到session对象，之后便可以在该session对象当中存放一些属于该客户端的信息，只要是同一个客户端发出的请求，其所获取的session对象肯定也是同一个，这样就实现了客户端在服务端留下标识，以便让服务端判断每个请求是从哪个客户端发送的。
+
+除了使用Cookie机制可以实现Session外，还可以通过隐藏表单、URL末尾附加ID来追踪Session。这些机制很少使用，最常用的Session机制仍然是Cookie。因此session机制和cookie实际上两者并没有任何联系，只是session机制可以借助cookie来实现，即使没有cookie，也可以通过其它形式来追踪session。
+
+### 前提
+
 因为HTTP协议是一个无状态协议，即Web应用程序无法区分收到的两个HTTP请求是否是**同一个浏览器**发出的。为了跟踪用户状态，服务器可以**向浏览器分配一个唯一ID**，并以**Cookie的形式**发送到浏览器，浏览器在后续访问时总是附带此Cookie，这样，服务器就可以识别用户身份。
 
 **同一个浏览器指的是浏览器类型，即会为chrome浏览器和edge浏览器分配两个ID，但不会为chrome和chrome无痕模式分配两个ID，即无痕模式不算是一个新的类型**。
