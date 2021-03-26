@@ -248,6 +248,7 @@ Integer.class.isAssignableFrom(Number.class); // false，因为Number不能赋�
 ## 动态代理
 
 Java标准库提供了一种动态代理（Dynamic Proxy）的机制：可以在运行期动态创建某个interface的实例。
+
 所谓动态代理，是和静态相对应的。来看我们通常编写代码的方式。
 
 ```Java
@@ -275,12 +276,9 @@ public interface Hello {
 
 public static void main(String[] args) {
     InvocationHandler handler = new InvocationHandler() {
-        /*
-            * Processes a method invocation on a proxy instance and returns the result.
-            * This method will be invoked on an invocation handler when a method is invoked on a proxy instance that it is associated with.
-            */
         @Override
         public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+            // 在invoke方法内实现代理接口方法的逻辑:
             System.out.println(method);
             if (method.getName().equals("morning"))
                 System.out.println("Good morning, " + args[0]);
@@ -298,6 +296,15 @@ public static void main(String[] args) {
 }
 ```
 
+在运行期动态创建一个interface实例的方法如下：
+
+1. 定义一个InvocationHandler实例，它**负责实现接口的方法调用**；
+2. 通过Proxy.newProxyInstance()**创建interface实例**，它需要3个参数：
+    1. 使用的ClassLoader，通常就是接口类的ClassLoader；
+    2. 需要实现的接口数组，至少需要传入一个接口进去；
+    3. 用来处理接口方法调用的InvocationHandler实例。
+3. 将返回的Object强制转型为接口。
+
 动态代理实际上是JDK在运行期动态创建class字节码并加载的**过程**，它并没有什么黑魔法，把上面的动态代理改写为静态实现类大概长这样。
 
 ```Java
@@ -310,6 +317,7 @@ public class HelloDynamicProxy implements Hello {
 
     @Override
     public void morning(String name) {
+        // 调用接口方法时，实际上是在调用InvocationHandler的invoke方法:
         this.handler.invoke(
                 this,
                 Hello.class.getMethod("morning", String.class)),
