@@ -25,6 +25,13 @@ NIO中Selector是对底层操作系统实现的一个抽象，管理通道状态
 
 毕竟JVM是一个屏蔽底层实现的平台，我们面向Selector编程就可以了。
 
+四类就绪事件：
+
+- OP_READ，读就绪事件，表示数据已经在内核缓冲区中，可将其读往用户空间中。
+- OP_WRITE，写就绪事件，表示数据可从用户空间读到内核缓冲区中。
+- OP_CONNECT，连接就绪事件，可以理解为此时客户端可以向服务端发起连接。
+- OP_ACCEPT，确认就绪事件，可以理解为服务端接收到客户端的连接请求。
+
 ```java
 public class NioNonBlockingHttpClient {
     private static Selector selector;
@@ -65,7 +72,7 @@ public class NioNonBlockingHttpClient {
     // JavaNIO的Selector和Linux的select不同，这里不会遍历所有关联的channel，
     // 每次从选择器中获取的都是那些符合事件类型，并且完成就绪操作的channel，减少了大量无效的遍历操作。
     public void select() throws IOException {
-        // 获取就绪的channel个数，
+        // 获取就绪的channel个数，即有多少个channel可操作，
         // select()方法是同步阻塞的，直到有新的事件发生才会被唤醒，防止CPU空转的产生，
         // 也可以设置超时事件结束阻塞过程:
         while (selector.select(500) > 0) {
@@ -112,7 +119,7 @@ public class NioNonBlockingHttpClient {
         // 我们这里要的仅仅是数据从用户空间拷贝到内核空间缓冲区这一步是阻塞的。
         // 至于OS将缓冲区的数据借由socket发送出去，这一步不应该在阻塞范围内。
         channel.write(CHARSET.encode(request));
-        // 当写操作发生后，修改channel关心的事件，之后只关心读就绪事件发生。
+        // 当写操作发生后，修改当前channel关心的事件，之后只关心读就绪事件发生。
         key.interestOps(SelectionKey.OP_READ);
     }
 
@@ -124,7 +131,8 @@ public class NioNonBlockingHttpClient {
         ByteBuffer buffer = ByteBuffer.allocate(1024);
         // 从内核缓冲区中，拷贝数据到刚刚分配的固定大小的缓冲区，现在是往固定大小缓冲区中写入数据，属于写模式，
         channel.read(buffer);
-        // 拷贝完毕后，需要转为读模式，此时会将position属性归零，表示下一次拷贝时可以从头开始放入，
+        // 拷贝完毕后，需要转为读模式，此时会将position属性归零，表示从头开始读取数据，
+        // 可以理解为position表示了读写操作的位置指针，
         buffer.flip();
         // 从固定大小缓冲区中读取数据。
         String receiveData = CHARSET.decode(buffer).toString();
