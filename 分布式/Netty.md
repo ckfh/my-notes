@@ -5,53 +5,38 @@
 1. 并发量大时，创建大量线程，占用大量的系统资源。
 2. 连接创建后，如果当前线程暂时**没有数据可读**，该线程会阻塞在read操作，造成线程资源浪费。
 
-## Reactor模式
+## Netty异步概念
 
-Reactor在一个单独的线程中运行，负责监听和分发事件。
+netty所谓的异步和实际的异步I/O编程模型并不相同，netty的异步是指netty采用了多线程的机制将调用方法和处理结果的过程相分离。
 
-三种模式：
+## 正确观念
 
-- 单Reactor单线程
+- 把 channel 理解为数据的通道；
+- 把 msg 理解为流动的数据，最开始输入是 ByteBuf，但经过 pipeline 的加工，会变成其它类型对象，最后输出又变成 ByteBuf；
+- 把 handler 理解为数据的处理工序；
+    - 工序有多道，合在一起就是 pipeline，pipeline 负责发布事件（读、读取完成...）传播给每个 handler， handler 对自己感兴趣的事件进行处理（重写了相应事件处理方法）；
+    - handler 分 Inbound 和 Outbound 两类，即读入数据时如何处理，写出数据时如何处理；
+- 把 eventLoop 理解为处理数据的工人，底层是一个**单线程线程池**；
+    - 工人可以管理多个 channel 的 I/O 操作，并且一旦工人负责了某个 channel，就要负责到底（绑定）；
+    - 工人既可以执行 I/O 操作，也可以进行任务处理，每位工人有任务队列，队列里可以堆放多个 channel 的待处理任务，任务分为普通任务、定时任务；
+    - 工人按照 pipeline 顺序，依次按照 handler 的规划（代码）处理数据，可以为每道工序指定不同的工人；
 
-    <img src="./image/单reactor单线程.png">
+## eventLoop细分
 
-- 单Reactor多线程
+EventLoopGroup拥有多个eventLoop，每个eventLoop底层都是一个单线程的线程池，它基于I/O多路复用模型来监听多个与之关联的channel上所发生的事件。
 
-    <img src="./image/单reactor多线程.png">
+<img src="./image/boss-worker.png">
 
-- 主从Reactor多线程
+这里没有展示bossGroup，bossGroup在不指定线程数量(eventLoop数量)的情况下，也只会有一个eventLoop创建，因为ServerSocketChannel需要关联一个eventLoop，而ServerSocketChannel一个服务端只需要一个来处理**accept事件**，因此不会多创建其它的eventLoop。
 
-    - <img src="./image/主从reactor多线程.png">
-    - <img src="./image/多reactors.png">
+这里展示的是workerGroup，它有两个eventLoop对象，每个eventLoop可以关联多个channel，负责**处理read/write事件**。
 
-## 主从Reactor多线程流程说明
+**当一个eventLoop上多个channel有事件发生时，会遍历选择一个channel的事件，在当前eventLoop的线程当中按顺序调用handler进行处理，处理完毕后，才处理下一个channel上的事件**。
 
-1. reactor主线程mainreactor对象通过select监听连接事件，收到连接事件后，通过acceptor处理连接事件。
-2. 当acceptor处理连接事件后，mainreactor将连接分配给subreactor。
-3. subreactor将连接加入到连接队列进行监听，并创建handler进行各种事件处理。
-4. 当有新事件发生时，subreactor就会调用对应的handler处理。
-5. handler通过read读取数据，分发给后面的worker线程处理。
-6. worker线程池分配独立的worker线程进行业务处理，并返回结果。
-7. handler收到响应的结果后，再通过send将结果返回给client。
-8. mainreactor可以关联多个subreactor。
+<img src="./image/boss-worker-default.png">
 
-## netty模型(简单和进阶)
+如果出现某个handler处理事件过长，将导致后续channel事件被延迟处理，对于这类handler可以选择在另外的eventLoop中去处理。
 
-<img src="./image/netty模型-简单版.jpg">
+即bossGroup中的eventLoop关联一个ServerSocketChannel负责accept事件，workerGroup中的eventLoop关联多个SocketChannel负责根据事件类型按序**调用**handler进行处理。
 
-1. BG线程维护一个selector，关联一个serversocketchannel，只关注accept事件。
-2. 当监听到accept事件后，获取对应的socketchannel，封装成niosocketchannel。
-3. WG线程也维护一个selector，它接收BG传递过来的niosocketchannel，关联到selector中，确定关注的事件。
-4. 当niosocketchannel事件发生时，WG线程将其交给handler进行处理。
-
-所谓进阶版，就是一个BG中有多个线程在轮询，而WG中也有多个线程在轮询。
-
-## netty模型(详细)
-
-<img src="./image/netty模型-详细版.png">
-
-(服务端)可以理解为BG和WG实际上工作模式是一致的，只是BG负责处理连接事件，WG负责处理写、读事件。
-
-BG和WG就是一个线程池，而NioEventLoop就是线程池中的线程，它们的做法就是轮询，然后传递channel对象。
-
-pipeline封装了channel，内置了许多的处理器，可以方便地操作channel的读和写。
+对于调用时间即业务逻辑时间过长的handler可以交给defaultGroup中的eventLoop来进行处理。
