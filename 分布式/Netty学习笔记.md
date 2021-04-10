@@ -307,7 +307,7 @@ If this annotation is not specified, you have to create a new handler instance e
 
 注意：队列满载是在accept()方法无法处理的时候，但是netty本身的accept()方法处理能力是非常强的。
 
-Windows backlog参数可以直接控制全连接队列大小，Linux需要修改底层配置文件修改。
+Windows backlog参数可以直接控制全连接队列大小，Linux则需要配合修改底层配置文件。
 
 如何在源码中找到一个变量的起始配置地点？
 
@@ -323,7 +323,7 @@ Windows backlog参数可以直接控制全连接队列大小，Linux需要修改
 4. private volatile int backlog = NetUtil.SOMAXCONN;
 5. 找到SOMAXCONN在NetUtil中的赋值语句。
 
-结论：Windows默认全连接队列大小200，Linux默认128，但是Linux还会到底层找到配置文件，设置为配置文件中的大小。
+结论：Windows默认全连接队列大小200，Linux默认4096(5.8.0-48-generic)，但是Linux内核会根据传入的backlog参数和底层配置文件的somaxconn参数，取两者的最小值。
 
 ulimit -n：操作系统参数，用于调整每个进程可打开的最大文件描述符数量，为了支持高并发，服务端肯定需要调整该参数的值。该参数属于临时修改，因此最好配置在启动脚本中。
 
