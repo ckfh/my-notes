@@ -679,6 +679,7 @@ private void processSelectedKey(SelectionKey k, AbstractNioChannel ch) {
         // Also check for readOps of 0 to workaround possible JDK bug which may otherwise lead
         // to a spin loop
         if ((readyOps & (SelectionKey.OP_READ | SelectionKey.OP_ACCEPT)) != 0 || readyOps == 0) {
+            // 处理read和accept事件:
             unsafe.read();
         }
     } catch (CancelledKeyException ignored) {
@@ -697,3 +698,302 @@ NIO原始的accept流程：
 4. 创建socketchannel，设置非阻塞。
 5. 将socketchannel注册至selector。
 6. 关注selectionKey的read事件。
+
+<img src="./image/accept流程.jpg">
+
+```java
+@Override
+public void read() {
+    assert eventLoop().inEventLoop();
+    final ChannelConfig config = config();
+    final ChannelPipeline pipeline = pipeline();
+    final RecvByteBufAllocator.Handle allocHandle = unsafe().recvBufAllocHandle();
+    allocHandle.reset(config);
+
+    boolean closed = false;
+    Throwable exception = null;
+    try {
+        try {
+            do {
+                // 底下源码，拿到SocketChannel，将其作为NioSocketChannel构造方法的参数构造NioSocketChannel:
+                int localRead = doReadMessages(readBuf);
+                if (localRead == 0) {
+                    break;
+                }
+                if (localRead < 0) {
+                    closed = true;
+                    break;
+                }
+
+                allocHandle.incMessagesRead(localRead);
+            } while (allocHandle.continueReading());
+        } catch (Throwable t) {
+            exception = t;
+        }
+
+        int size = readBuf.size();
+        for (int i = 0; i < size; i ++) {
+            readPending = false;
+            // 拿到NioServerSocketChannel的pipeline，对刚刚建立的连接作为一个消息，由pipeline上的handler进行处理，
+            // 上述提到NSSC建立时，pipeline上只有三个handler，并且在连接过程中进行处理的主要就是acceptor handler，
+            // 看底下源码:
+            pipeline.fireChannelRead(readBuf.get(i));
+        }
+        readBuf.clear();
+        allocHandle.readComplete();
+        pipeline.fireChannelReadComplete();
+
+        if (exception != null) {
+            closed = closeOnReadError(exception);
+
+            pipeline.fireExceptionCaught(exception);
+        }
+
+        if (closed) {
+            inputShutdown = true;
+            if (isOpen()) {
+                close(voidPromise());
+            }
+        }
+    } finally {
+        // Check if there is a readPending which was not processed yet.
+        // This could be for two reasons:
+        // * The user called Channel.read() or ChannelHandlerContext.read() in channelRead(...) method
+        // * The user called Channel.read() or ChannelHandlerContext.read() in channelReadComplete(...) method
+        //
+        // See https://github.com/netty/netty/issues/2254
+        if (!readPending && !config.isAutoRead()) {
+            removeReadOp();
+        }
+    }
+}
+
+@Override
+protected int doReadMessages(List<Object> buf) throws Exception {
+    // 根据原生ServerSocketChannel建立连接并拿到SocketChannel:
+    SocketChannel ch = SocketUtils.accept(javaChannel());
+
+    try {
+        if (ch != null) {
+            // 将SocketChannel作为参数构造NioSocketChannel，
+            // 将NioSocketChannel作为一个消息放到集合中，将来会被pipeline上的handler进行处理:
+            buf.add(new NioSocketChannel(this, ch));
+            return 1;
+        }
+    } catch (Throwable t) {
+        logger.warn("Failed to create a new channel from an accepted socket.", t);
+
+        try {
+            ch.close();
+        } catch (Throwable t2) {
+            logger.warn("Failed to close a socket.", t2);
+        }
+    }
+
+    return 0;
+}
+
+@Override
+@SuppressWarnings("unchecked")
+public void channelRead(ChannelHandlerContext ctx, Object msg) {
+    // NioSocketChannel
+    final Channel child = (Channel) msg;
+
+    child.pipeline().addLast(childHandler);
+
+    setChannelOptions(child, childOptions, logger);
+    setAttributes(child, childAttrs);
+
+    try {
+        // 从NioEventLoopGroup中找到一个新的EventLoop，将当前channel注册到EventLoop中的selector上:
+        childGroup.register(child).addListener(new ChannelFutureListener() {
+            @Override
+            public void operationComplete(ChannelFuture future) throws Exception {
+                if (!future.isSuccess()) {
+                    forceClose(child, future.cause());
+                }
+            }
+        });
+    } catch (Throwable t) {
+        forceClose(child, t);
+    }
+}
+
+@Override
+public final void register(EventLoop eventLoop, final ChannelPromise promise) {
+    ObjectUtil.checkNotNull(eventLoop, "eventLoop");
+    if (isRegistered()) {
+        promise.setFailure(new IllegalStateException("registered to an event loop already"));
+        return;
+    }
+    if (!isCompatible(eventLoop)) {
+        promise.setFailure(
+                new IllegalStateException("incompatible event loop type: " + eventLoop.getClass().getName()));
+        return;
+    }
+
+    AbstractChannel.this.eventLoop = eventLoop;
+    // 进行线程切换，在accept事件处理过程中，执行到这里都是NioServerSocketChannel所在的线程在处理，
+    // 但此刻传入的EventLoop对象已经是从childGroup中找到的一个EventLoop，
+    // 因为按照Netty的模型，NioSocketChannel和NioServerSocketChannel所处理的线程不能为同一个:
+    if (eventLoop.inEventLoop()) {
+        register0(promise);
+    } else {
+        try {
+            // 保证register0方法是发生在NioSocketChannel的处理线程上:
+            eventLoop.execute(new Runnable() {
+                @Override
+                public void run() {
+                    // 看底下源码:
+                    register0(promise);
+                }
+            });
+        } catch (Throwable t) {
+            logger.warn(
+                    "Force-closing a channel whose registration task was not accepted by an event loop: {}",
+                    AbstractChannel.this, t);
+            closeForcibly();
+            closeFuture.setClosed();
+            safeSetFailure(promise, t);
+        }
+    }
+}
+
+private void register0(ChannelPromise promise) {
+    try {
+        // check if the channel is still open as it could be closed in the mean time when the register
+        // call was outside of the eventLoop
+        if (!promise.setUncancellable() || !ensureOpen(promise)) {
+            return;
+        }
+        boolean firstRegistration = neverRegistered;
+        // 执行原生SocketChannel的注册操作，此时selectionKey上未关注任何事件:
+        doRegister();
+        neverRegistered = false;
+        registered = true;
+
+        // Ensure we call handlerAdded(...) before we actually notify the promise. This is needed as the
+        // user may already fire events through the pipeline in the ChannelFutureListener.
+        // 执行我们在服务端中为每一个新建立的NioSocketChannel的初始化方法，ChannelInitializer<NioSocketChannel>中的initChannel方法:
+        pipeline.invokeHandlerAddedIfNeeded();
+
+        safeSetSuccess(promise);
+        pipeline.fireChannelRegistered();
+        // Only fire a channelActive if the channel has never been registered. This prevents firing
+        // multiple channel actives if the channel is deregistered and re-registered.
+        if (isActive()) {
+            if (firstRegistration) {
+                // 为上述提到的selectionKey上关注read事件:
+                pipeline.fireChannelActive();
+            } else if (config().isAutoRead()) {
+                // This channel was registered before and autoRead() is set. This means we need to begin read
+                // again so that we process inbound data.
+                //
+                // See https://github.com/netty/netty/issues/4805
+                beginRead();
+            }
+        }
+    } catch (Throwable t) {
+        // Close the channel directly to avoid FD leak.
+        closeForcibly();
+        closeFuture.setClosed();
+        safeSetFailure(promise, t);
+    }
+}
+
+@Override
+protected void doRegister() throws Exception {
+    boolean selected = false;
+    for (;;) {
+        try {
+            // 此时javaChannel()方法的返回值已经变成了原生的SocketChannel，将其注册到selector上，
+            // 然后将(this)NioSocketChannel作为附件绑定在selectionKey上:
+            selectionKey = javaChannel().register(eventLoop().unwrappedSelector(), 0, this);
+            return;
+        } catch (CancelledKeyException e) {
+            if (!selected) {
+                // Force the Selector to select now as the "canceled" SelectionKey may still be
+                // cached and not removed because no Select.select(..) operation was called yet.
+                eventLoop().selectNow();
+                selected = true;
+            } else {
+                // We forced a select operation on the selector before but the SelectionKey is still cached
+                // for whatever reason. JDK bug ?
+                throw e;
+            }
+        }
+    }
+}
+```
+
+## read流程
+
+NIO原始的read流程：
+
+1. selector.select()阻塞直到事件发生。
+2. 遍历处理selectedKeys。
+3. 拿到一个key，判断事件类型是否为read。
+4. 读取操作。
+
+```java
+@Override
+public final void read() {
+    final ChannelConfig config = config();
+    if (shouldBreakReadReady(config)) {
+        clearReadPending();
+        return;
+    }
+    final ChannelPipeline pipeline = pipeline();
+    // 池化还是非池化:
+    final ByteBufAllocator allocator = config.getAllocator();
+    // 强制直接内存实现:
+    final RecvByteBufAllocator.Handle allocHandle = recvBufAllocHandle();
+    allocHandle.reset(config);
+
+    ByteBuf byteBuf = null;
+    boolean close = false;
+    try {
+        do {
+            byteBuf = allocHandle.allocate(allocator);
+            // doReadBytes接收客户端发送的数据，向byteBuf中填充内容:
+            allocHandle.lastBytesRead(doReadBytes(byteBuf));
+            if (allocHandle.lastBytesRead() <= 0) {
+                // nothing was read. release the buffer.
+                byteBuf.release();
+                byteBuf = null;
+                close = allocHandle.lastBytesRead() < 0;
+                if (close) {
+                    // There is nothing left to read as we received an EOF.
+                    readPending = false;
+                }
+                break;
+            }
+
+            allocHandle.incMessagesRead(1);
+            readPending = false;
+            // 触发了读事件，准备好数据之后依次触发pipeline上handler的channelRead方法:
+            pipeline.fireChannelRead(byteBuf);
+            byteBuf = null;
+        } while (allocHandle.continueReading());
+
+        allocHandle.readComplete();
+        pipeline.fireChannelReadComplete();
+
+        if (close) {
+            closeOnRead(pipeline);
+        }
+    } catch (Throwable t) {
+        handleReadException(pipeline, byteBuf, t, close, allocHandle);
+    } finally {
+        // Check if there is a readPending which was not processed yet.
+        // This could be for two reasons:
+        // * The user called Channel.read() or ChannelHandlerContext.read() in channelRead(...) method
+        // * The user called Channel.read() or ChannelHandlerContext.read() in channelReadComplete(...) method
+        //
+        // See https://github.com/netty/netty/issues/2254
+        if (!readPending && !config.isAutoRead()) {
+            removeReadOp();
+        }
+    }
+}
+```

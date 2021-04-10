@@ -1,5 +1,85 @@
 # 笔记
 
+## 实现一个自定义的不可重入独占锁
+
+```java
+class MyLock implements Lock {
+    class MySync extends AbstractQueuedSynchronizer {
+        @Override
+        protected boolean tryAcquire(int arg) {
+            // 尝试加锁，如果成功将state状态改为1，表示加锁成功，设置当前线程为占有线程:
+            if (compareAndSetState(0, 1)) {
+                setExclusiveOwnerThread(Thread.currentThread());
+                return true;
+            }
+            return false;
+        }
+
+        @Override
+        protected boolean tryRelease(int arg) {
+            // 尝试解锁，因为只有占有线程才会尝试解锁，因此直接将占有线程设为空，将state状态改为0，表示锁已释放:
+            setExclusiveOwnerThread(null);
+            // state变量被volatile修饰，因此将其设置放到最后，可以保证连同之前的一些设置对其它线程立即可见，
+            // 因为它防止指令的重排序，即前面的代码不会跑到后面去，后面的代码不会跑到前面去，
+            // 既然能执行到该语句，就证明前面的代码都已经执行完毕，可以将内容安全地刷新回主内存:
+            setState(0);
+            return true;
+        }
+
+        @Override
+        protected boolean isHeldExclusively() {
+            // 加锁后state被改为1，因此判断state为1时表示已被占用:
+            return getState() == 1;
+        }
+
+        public Condition newCondition() {
+            // ConditionObject是来自AQS的内部类:
+            return new ConditionObject();
+        }
+    }
+
+    private MySync sync = new MySync();
+
+    // 加锁(加锁失败会等待)
+    @Override
+    public void lock() {
+        // 直接调用AQS的acquire方法，它会调用我们自实现的tryAcquire，返回false时会将当前线程加入到等待队列中，这一步由AQS来帮助我们完成:
+        sync.acquire(1);
+    }
+
+    // 加锁，可打断
+    @Override
+    public void lockInterruptibly() throws InterruptedException {
+        sync.acquireInterruptibly(1);
+    }
+
+    // 尝试加锁(一次不成功，就返回false，不会等待)
+    @Override
+    public boolean tryLock() {
+        return sync.tryAcquire(1);
+    }
+
+    // 尝试加锁(带超时)
+    @Override
+    public boolean tryLock(long time, TimeUnit unit) throws InterruptedException {
+        return sync.tryAcquireNanos(1, unit.toNanos(time));
+    }
+
+    // 解锁
+    @Override
+    public void unlock() {
+        // release和tryRelease的区别是前者除了释放锁还会唤醒等待线程:
+        sync.release(1);
+    }
+
+    // 创建条件变量
+    @Override
+    public Condition newCondition() {
+        return sync.newCondition();
+    }
+}
+```
+
 ## 锁的特点
 
 `ReentrantLock`和Synchronized的比较：
