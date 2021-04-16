@@ -2,6 +2,14 @@
 
 反射是为了解决在运行期，对某个实例一无所知的情况下，如何调用其方法。
 
+## 反射的应用场景
+
+通过反射拿到源码中未提供访问方法的私有字段，对其进行打印。
+
+[参考](https://tech.meituan.com/2018/10/18/netty-direct-memory-screening.html)
+
+美团文章在排除BUG时，通过反射工具拿到Netty源码中的一个关键字段，对其进行输出来进行BUG分析。
+
 ## Class类
 
 class（包括interface）的本质是**数据类型**（Type）。无继承关系的数据类型无法赋值。而class是由JVM在执行过程中动态加载的。JVM在第一次读取到一种class类型时，将其加载进内存。每加载一种class，JVM就为其创建一个Class类型的实例，并关联起来。注意：这里的Class类型是一个名叫Class的class。以String类为例，当JVM加载String类时，它首先读取String.class字节码文件到内存，然后，为String类创建一个Class实例并关联起来。
