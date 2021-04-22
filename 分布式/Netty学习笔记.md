@@ -80,6 +80,8 @@ NioEventLoopGroup里面包含了多个NioEventLoop，而每个NioEventLoop又包
 
 实际上NioEventLoop的“单线程”是一个单线程线程池，因此NioEventLoop除了能处理I/O的读写任务外，还可以向它提交普通任务或者定时任务。
 
+这个单线程线程池直接从最顶层的线程池接口Executor继承并实现了一个线程工厂类，在内部直接启动了一个新的线程，非常简单粗暴。
+
 NioEventLoop能处理IO事件，普通任务，定时任务；DefaultEvent能处理普通任务，定时任务。
 
 它俩可以联合起来实现异步，例如NioEventLoop从IO事件中读取到数据，交给DefaultEvent进行业务处理，于是NioEventLoop就可以继续去处理其它的IO读写事件，然后DefaultEvent完成业务处理后，将数据交给NioEventLoop返回给客户端，或者NioEventLoop本身就可以联合另一个NioEventLoop来进行异步处理。
