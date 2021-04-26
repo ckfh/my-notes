@@ -382,3 +382,7 @@ selector.wakeup()是一个重量级操作，阻塞到运行，要借助系统调
 **任务队列是普通任务和定时任务的队列**。I/O事件可以通过selector的keys集合获取。
 
 NIO空轮询BUG，这是在Linux底层使用epoll作为系统调用时会发生的一个BUG，指的是没有IO事件发生，但是select方法被唤醒，又因为select和后续的方法处理逻辑通常放在一个while(true)当中，这就会导致CPU空转，利用率达到100%。
+
+Netty服务端模型是多Reactor多线程的方案，bossEventLoopGroup和workEventLoopGroup中的每一个EventLoop都包含一个selector和一个线程，bossEventLoop只负责连接建立，workEventLoop负责具体的读和写事件，因此称它为多Reactor多线程方案。
+
+Redis服务端模型是单Reactor单进程的方案，实现简单，缺陷在于无法使用多核CPU，而且业务处理事件不能太长，否则会延迟响应，不适合计算密集的应用，使用业务快速处理的场景，Redis因为处理都是基于内存来的，就是在内存上进行读和写，所以处理速度非常快，瓶颈往往在于网络I/O部分。

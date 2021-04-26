@@ -41,7 +41,7 @@
 - [JVM 快速认识](./JVM/视频入门.md)
 - [JVM 随手记](./JVM/读书笔记.md)
 
-## MySQL
+## :floppy_disk: MySQL
 
 - [《MySQL 必知必会》读书笔记](./数据库/MySQL必知必会/note.md)
 - [MySQL 随手记](./数据库/SQL/MySQL.md)
