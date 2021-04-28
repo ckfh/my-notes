@@ -86,3 +86,22 @@ tail -n +20 filename
 # 最后10个字符内容
 tail -c 10 filename
 ```
+
+## kill命令
+
+```shell
+# SIGQUIT
+kill -3 pid
+# SIGKILL
+kill -9 pid
+# SIGTERM
+kill -15 pid
+```
+
+## 停止一个Java进程
+
+首先用`jps`查看Java进程ID，如果用`-3`停止Java进程，则会打印一些线程信息，但是进程本身不会停止运行。
+
+用`-9`可以无条件终止Java进程，并且会显示`killed`提示，但是这种停止方式不会触发虚拟机关闭钩子函数。
+
+用`-15`是尽可能地终止Java进程，会触发钩子函数，不会打印`killed`提示。
