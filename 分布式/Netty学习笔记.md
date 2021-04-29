@@ -74,7 +74,7 @@ stream vs channel：
 
 - 同步：线程自己获取结果(调用方法的线程和接收数据处理结果的线程是同一个)
 - 异步：线程自己不去获取结果，而是由其它线程送结果(至少两个线程)
-- netty异步：使用多线程将方法调用和处理结果相分离，当前线程在方法调用后，将处理结果的过程交给另一个线程来处理，解放了当前线程
+- netty异步：**使用多线程将方法调用和处理结果相分离，当前线程在方法调用后，将处理结果的过程交给另一个线程来处理，解放了当前线程，不是真正意义上的异步**
 
 NioEventLoopGroup里面包含了多个NioEventLoop，而每个NioEventLoop又包含了一个selector对象和一个thread对象，其实就类似于上述提到的boss和worker，由selector监听channel上的事件，交给thread对象来执行。
 
@@ -104,10 +104,10 @@ ChannelFuture可以联想到JDK的Future对象，一般是配合异步方法使�
 
 - channelFuture.sync(); // 阻塞直到连接建立
 - future.get(); // 阻塞直到方法执行完毕
-- channelFuture.addListener(回调对象); // 将连接建立后的处理操作都交给 NIO 线程进行处理
+- channelFuture.addListener(回调对象); // **将连接建立后的处理操作都交给 NIO 线程进行处理**
 
 - 同步：谁发起请求谁处理结果
-- 异步：只发起请求，等结果和处理结果都交给另外线程
+- **异步：只发起请求，等结果和处理结果都交给另外线程**
 
 - channelFuture是用来异步处理连接建立的；
 - closeFuture是用来异步处理连接关闭的；
@@ -221,15 +221,15 @@ ByteBuf 优势
 
 原因：
 
-- 应用层：接收方的buffer设置太大；
+- 应用层：接收方的ByteBuf设置太大，Netty默认1024；
 - 传输层：TCP协议定义了滑动窗口(缓冲区、流量控制)，假设接收方处理不及时且窗口大小足够大，那么一个完整报文就会缓冲在接收方的滑动窗口中，当滑动窗口缓冲了多个报文就会粘包；
-- 传输层：nagle算法，报文是由首部和数据部分组成的，有的时候首部字节很多，数据部分字节很少，nagle算法就会尝试缓存，直到有足够数据了才发送。
+- 传输层：nagle算法，报文是由首部和数据部分组成的，有的时候首部字节很多，数据部分字节很少，nagle算法就会尝试缓存，直到数据部分的比例较大时才发送。
 
 半包现象：发送abcdef，接收abc和def
 
 原因：
 
-- 应用层：接收方的buffer小于实际到达的数据量；
+- 应用层：接收方的ByteBuf小于实际到达的数据量；
 - 传输层：滑动窗口，接收方只能接收报文的一半，因此只能先发送一半，此时滑动窗口满了，等待处理回复ACK后，再发送另一半；
 - 链路层：MSS限制，因为承载能力有限，数据会被切分发送。
 
@@ -387,6 +387,5 @@ selector.wakeup()是一个重量级操作，阻塞到运行，要借助系统调
 
 NIO空轮询BUG，这是在Linux底层使用epoll作为系统调用时会发生的一个BUG，指的是没有IO事件发生，但是select方法被唤醒，又因为select和后续的方法处理逻辑通常放在一个while(true)当中，这就会导致CPU空转，利用率达到100%。
 
-Netty服务端模型是多Reactor多线程的方案，bossEventLoopGroup和workEventLoopGroup中的每一个EventLoop都包含一个selector和一个线程，bossEventLoop只负责连接建立，workEventLoop负责具体的读和写事件，因此称它为多Reactor多线程方案。
-
-Redis服务端模型是单Reactor单进程的方案，实现简单，缺陷在于无法使用多核CPU，而且业务处理事件不能太长，否则会延迟响应，不适合计算密集的应用，使用业务快速处理的场景，Redis因为处理都是基于内存来的，就是在内存上进行读和写，所以处理速度非常快，瓶颈往往在于网络I/O部分。
+- Netty服务端模型是多Reactor多线程的方案，bossEventLoopGroup和workEventLoopGroup中的每一个EventLoop都包含一个selector和一个线程，bossEventLoop只负责连接建立，workEventLoop负责具体的读和写事件，因此称它为多Reactor多线程方案。
+- Redis服务端模型是单Reactor单进程的方案，实现简单，缺陷在于无法使用多核CPU，而且业务处理事件不能太长，否则会延迟响应，不适合计算密集的应用，适用业务快速处理的场景，Redis因为处理都是基于内存来的，就是在内存上进行读和写，所以处理速度非常快，瓶颈往往在于网络I/O部分。
