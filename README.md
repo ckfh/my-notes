@@ -1,4 +1,4 @@
-# :notebook: 学习笔记
+# :notebook_with_decorative_cover: 学习笔记
 
 ~~当博客用~~，放一些自己觉得还算~~看得过去~~完整的笔记链接。
 
@@ -41,7 +41,6 @@
 - [自己动手实现一个线程池](./Java/13多线程/线程池.md)
 - [ReentrantLock 源码](./Java/13多线程/JUC源码/ReentrantLock.md)
 - [ReentrantReadWriteLock 源码](./Java/13多线程/JUC源码/ReentrantReadWriteLock.md)
-- [StampedLock 源码](./Java/13多线程/JUC源码/StampedLock.md)
 - [LongAdder 源码](./Java/13多线程/JUC源码/LongAdder.md)
 
 ## :coffee: JVM
