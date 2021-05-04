@@ -68,7 +68,7 @@ MSS：TCP数据包的最大长度。
     - 计算出一个cookie值，再以SYN+ACK包中的【序列号】返回给客户端；
     - 服务端接收到ACK报文时，验证ACK包合法性，如果合法，放入全连接队列；
 
-## socket编程中listen参数backlog意义
+## Socket编程listen函数backlog参数意义
 
 在早期Linux中，该参数是半连接队列大小。
 
