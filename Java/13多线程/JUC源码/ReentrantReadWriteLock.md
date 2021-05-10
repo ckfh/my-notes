@@ -72,7 +72,7 @@ protected final boolean tryAcquire(int acquires) {
 }
 ```
 
-## 读写锁康之读锁加锁
+## 读写锁原理之读锁加锁
 
 ```java
 // ReentrantReadWriteLock

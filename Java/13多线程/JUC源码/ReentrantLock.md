@@ -65,7 +65,7 @@ final boolean acquireQueued(final Node node, int arg) {
             // 状态为-1的节点表示该节点有责任唤醒后续节点:
             if (shouldParkAfterFailedAcquire(p, node) &&
                 // 如果线程从阻塞状态被唤醒，则又返回到外层循环，
-                // 被唤醒后的尝试加锁仍可能失败，因此此时可能有非等待队列中的线程来竞争锁:
+                // 被唤醒后的尝试加锁仍可能失败，因为此时可能有非等待队列中的线程来竞争锁:
                 parkAndCheckInterrupt())
                 interrupted = true;
         }
