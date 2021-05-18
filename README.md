@@ -36,7 +36,7 @@
 
 ## :coffee: Java 并发
 
-- [Java 多线程](./Java/13多线程/廖雪峰.md)
+- [Java 多线程](./Java/13多线程/廖雪峰笔记.md)
 - [并发要点随手记](./Java/13多线程/笔记.md)
 - [自己动手实现一个线程池](./Java/13多线程/线程池.md)
 - [ReentrantLock 源码](./Java/13多线程/JUC源码/ReentrantLock.md)
