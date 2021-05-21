@@ -44,3 +44,14 @@ Spring 使用声明式事务，最终也是借助 `JDBC` 事务来实现，答�
 
 **因此，事务正确传播的一个前提是，方法调用在一个线程内执行，换句话说，事务只能在当前线程传播，无法跨线程传播。**
 
+## Spring 设计模式
+
+- 单例模式：Bean 的 Singleton 生命周期就是采用了单例模式；
+- 代理模式：Spring AOP 功能实现的本质思想；
+- 模板方法模式：各种 XxxTemplate，比如 HibernateTemplate 和 JdbcTemplate 就是采用了模板方法模式；
+- 工厂模式：BeanFactory 和 ApplicationContext 的设计思想。
+
+## BeanFactory 和 FactoryBean
+
+前者是 Spring 容器的根接口，后者是 Spring 所提供一种可以让我们灵活实现 Bean 的一个接口，它提供了一种简单工厂模式可以让我们在 getObject() 方法中灵活配置 Bean 的实现，**通常是在用来创建比较复杂的 Bean 时被使用**。
+
