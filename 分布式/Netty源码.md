@@ -6,34 +6,28 @@
 
 ```java
 private ChannelFuture doBind(final SocketAddress localAddress) {
-    // 会初始化原生ServerSocketChannel并注册到Selector，注意在方法内部完成了线程切换，因此该方法是一个异步方法，并返回一个promise对象:
+    // 会初始化原生ServerSocketChannel并注册到Selector，在方法的后半部分，即注册流程上，主线程会将注册工作交给NIO线程来执行，随后返回一个promise对象，因此该方法实际上是一个异步方法:
     final ChannelFuture regFuture = initAndRegister();
     final Channel channel = regFuture.channel();
     if (regFuture.cause() != null) {
         return regFuture;
     }
-    // 如果initAndRegister()执行得快，由主线程来执行绑定监听端口操作，如果执行得慢，由NIO线程来执行绑定监听端口操作:
+    // 如果initAndRegister()执行得快(一般都慢)，将由主线程来执行绑定监听端口操作，如果执行得慢，将由NIO线程来执行绑定监听端口操作:
     if (regFuture.isDone()) {
-        // At this point we know that the registration was complete and successful.
         ChannelPromise promise = channel.newPromise();
         // 绑定监听端口(主线程):
         doBind0(regFuture, channel, localAddress, promise);
         return promise;
     } else {
-        // Registration future is almost always fulfilled already, but just in case it's not.
         final PendingRegistrationPromise promise = new PendingRegistrationPromise(channel);
-        // 由主线程向promise对象添加一个回调对象，将来promise有结果时将调用该回调方法:
+        // 由主线程向promise对象添加一个回调对象，等将来promise对象完成注册工作后将调用回调方法:
         regFuture.addListener(new ChannelFutureListener() {
             @Override
             public void operationComplete(ChannelFuture future) throws Exception {
                 Throwable cause = future.cause();
                 if (cause != null) {
-                    // Registration on the EventLoop failed so fail the ChannelPromise directly to not cause an
-                    // IllegalStateException once we try to access the EventLoop of the Channel.
                     promise.setFailure(cause);
                 } else {
-                    // Registration was successful, so set the correct executor to use.
-                    // See https://github.com/netty/netty/issues/2586
                     promise.registered();
                     // 绑定监听端口(NIO线程)，看底下源码:
                     doBind0(regFuture, channel, localAddress, promise);
@@ -46,24 +40,21 @@ private ChannelFuture doBind(final SocketAddress localAddress) {
 
 final ChannelFuture initAndRegister() {
     Channel channel = null;
-    // init
+    // init部分:
     try {
         // 实例化NioServerSocketChannel，顺带在内部实例化了ServerSocketChannel:
         channel = channelFactory.newChannel();
-        // 看底下源码，为NioServerSocketChannel添加一个初始化handler，初始化handler等待被调用:
+        // 看底下源码，为NioServerSocketChannel添加一个初始化handler，该初始化handler将在后续被调用:
         init(channel);
     } catch (Throwable t) {
         if (channel != null) {
-            // channel can be null if newChannel crashed (eg SocketException("too many open files"))
             channel.unsafe().closeForcibly();
-            // as the Channel is not registered yet we need to force the usage of the GlobalEventExecutor
             return new DefaultChannelPromise(channel, GlobalEventExecutor.INSTANCE).setFailure(t);
         }
-        // as the Channel is not registered yet we need to force the usage of the GlobalEventExecutor
         return new DefaultChannelPromise(new FailedChannel(), GlobalEventExecutor.INSTANCE).setFailure(t);
     }
-    // register
-    // 看底下源码，很重要的一个步骤是切换线程，将方法的执行权从主线程切换到NIO线程:
+    // register部分:
+    // 看底下源码，很重要的一个步骤是将注册工作的执行权交给NIO线程:
     ChannelFuture regFuture = config().group().register(channel);
     if (regFuture.cause() != null) {
         if (channel.isRegistered()) {
@@ -72,15 +63,6 @@ final ChannelFuture initAndRegister() {
             channel.unsafe().closeForcibly();
         }
     }
-
-    // If we are here and the promise is not failed, it's one of the following cases:
-    // 1) If we attempted registration from the event loop, the registration has been completed at this point.
-    //    i.e. It's safe to attempt bind() or connect() now because the channel has been registered.
-    // 2) If we attempted registration from the other thread, the registration request has been successfully
-    //    added to the event loop's task queue for later execution.
-    //    i.e. It's safe to attempt bind() or connect() now:
-    //         because bind() or connect() will be executed *after* the scheduled registration task is executed
-    //         because register(), bind(), and connect() are all bound to the same thread.
 
     return regFuture;
 }
@@ -97,8 +79,8 @@ void init(Channel channel) {
     final Entry<ChannelOption<?>, Object>[] currentChildOptions = newOptionsArray(childOptions);
     final Entry<AttributeKey<?>, Object>[] currentChildAttrs = newAttributesArray(childAttrs);
 
+    // 为NioServerSocketChannel添加一个初始化handler，初始化方法只会执行一次，刚添加时并不会执行:
     p.addLast(new ChannelInitializer<Channel>() {
-        // 为NioServerSocketChannel添加一个初始化handler，初始化方法只会执行一次，刚添加时并不会执行:
         @Override
         public void initChannel(final Channel ch) {
             final ChannelPipeline pipeline = ch.pipeline();
@@ -106,7 +88,8 @@ void init(Channel channel) {
             if (handler != null) {
                 pipeline.addLast(handler);
             }
-            // 为NioServerSocketChannel中添加一个acceptor handler，这个handler负责将来accept事件发生后建立连接:
+            // 为NioServerSocketChannel中添加一个acceptor handler，这个handler负责将来accept事件发生后建立连接，
+            // 此处为了保证在NIO线程当中执行，于是又将此步操作封装成了一个任务提交给了NIO线程池：
             ch.eventLoop().execute(new Runnable() {
                 @Override
                 public void run() {
@@ -132,12 +115,12 @@ public final void register(EventLoop eventLoop, final ChannelPromise promise) {
     }
 
     AbstractChannel.this.eventLoop = eventLoop;
-    // 主线程运行到这里需要进行线程切换，切换到NIO线程:
+    // 判断此时的运行线程是否为NIO线程，由于此时仍为主线程，因此此处判断必定走else分支：
     if (eventLoop.inEventLoop()) {
         register0(promise);
     } else {
         try {
-            // 直到execute执行时，才会将eventLoop中包含的线程创建出来(懒加载)，然后执行register0方法:
+            // 直到execute执行时，才会将eventLoop中包含的线程创建出来(懒加载)，然后执行register0方法，此时register0就是由NIO线程来执行:
             eventLoop.execute(new Runnable() {
                 @Override
                 public void run() {
@@ -158,39 +141,29 @@ public final void register(EventLoop eventLoop, final ChannelPromise promise) {
 
 private void register0(ChannelPromise promise) {
     try {
-        // check if the channel is still open as it could be closed in the mean time when the register
-        // call was outside of the eventLoop
         if (!promise.setUncancellable() || !ensureOpen(promise)) {
             return;
         }
         boolean firstRegistration = neverRegistered;
-        // 看底下源码，将原生的ServerSocketChannel注册到NioEventLoop包含的Selector上，并将NioServerSocketChannel作为附件挂载到selectionKey:
+        // 看底下源码，将原生的ServerSocketChannel注册到NioEventLoop包含的Selector上，并将NioServerSocketChannel作为附件和原生ServerSocketChannel进行绑定:
         doRegister();
         neverRegistered = false;
         registered = true;
 
-        // Ensure we call handlerAdded(...) before we actually notify the promise. This is needed as the
-        // user may already fire events through the pipeline in the ChannelFutureListener.
         // 执行为NioServerSocketChannel添加的初始化handler中的初始化方法:
         pipeline.invokeHandlerAddedIfNeeded();
-        // 为上述所提到的promise对象设置结果:
+        // 为上述所提到的promise对象设置结果，将触发最上第一个方法中主线程为promise对象设置的回调方法的执行:
         safeSetSuccess(promise);
         pipeline.fireChannelRegistered();
-        // Only fire a channelActive if the channel has never been registered. This prevents firing
-        // multiple channel actives if the channel is deregistered and re-registered.
+
         if (isActive()) {
             if (firstRegistration) {
                 pipeline.fireChannelActive();
             } else if (config().isAutoRead()) {
-                // This channel was registered before and autoRead() is set. This means we need to begin read
-                // again so that we process inbound data.
-                //
-                // See https://github.com/netty/netty/issues/4805
                 beginRead();
             }
         }
     } catch (Throwable t) {
-        // Close the channel directly to avoid FD leak.
         closeForcibly();
         closeFuture.setClosed();
         safeSetFailure(promise, t);
@@ -208,17 +181,29 @@ protected void doRegister() throws Exception {
             return;
         } catch (CancelledKeyException e) {
             if (!selected) {
-                // Force the Selector to select now as the "canceled" SelectionKey may still be
-                // cached and not removed because no Select.select(..) operation was called yet.
                 eventLoop().selectNow();
                 selected = true;
             } else {
-                // We forced a select operation on the selector before but the SelectionKey is still cached
-                // for whatever reason. JDK bug ?
                 throw e;
             }
         }
     }
+}
+
+private static void doBind0(
+        final ChannelFuture regFuture, final Channel channel,
+        final SocketAddress localAddress, final ChannelPromise promise) {
+    // 此处为了保证在NIO线程池中由NIO线程执行，又将bind操作封装成了任务提交给线程池:
+    channel.eventLoop().execute(new Runnable() {
+        @Override
+        public void run() {
+            if (regFuture.isSuccess()) {
+                channel.bind(localAddress, promise).addListener(ChannelFutureListener.CLOSE_ON_FAILURE);
+            } else {
+                promise.setFailure(regFuture.cause());
+            }
+        }
+    });
 }
 
 @Override
@@ -229,13 +214,10 @@ public final void bind(final SocketAddress localAddress, final ChannelPromise pr
         return;
     }
 
-    // See: https://github.com/netty/netty/issues/576
     if (Boolean.TRUE.equals(config().getOption(ChannelOption.SO_BROADCAST)) &&
         localAddress instanceof InetSocketAddress &&
         !((InetSocketAddress) localAddress).getAddress().isAnyLocalAddress() &&
         !PlatformDependent.isWindows() && !PlatformDependent.maybeSuperUser()) {
-        // Warn a user about the fact that a non-root user can't receive a
-        // broadcast packet on *nix if the socket is bound on non-wildcard address.
         logger.warn(
                 "A non-root user can't receive a broadcast packet if the socket " +
                 "is not bound to a wildcard address; binding to a non-wildcard " +
@@ -279,7 +261,6 @@ protected void doBind(SocketAddress localAddress) throws Exception {
 
 @Override
 protected void doBeginRead() throws Exception {
-    // Channel.read() or ChannelHandlerContext.read() was called
     final SelectionKey selectionKey = this.selectionKey;
     if (!selectionKey.isValid()) {
         return;
@@ -298,7 +279,7 @@ protected void doBeginRead() throws Exception {
 
 由selector、thread、任务队列、定时任务队列组成，selector为自身持有，thread和任务队列taskQueue从祖父类SingleThreadEventExecutor中继承过来，然后在其曾祖父类AbstractScheduledEventExecutor中又继承了定时任务队列scheduledTaskQueue。
 
-**注意任务队列是普通任务和定时任务的队列，I/O事件可以直接通过selector的selectedKeys来获取**。
+**注意任务队列是普通任务和定时任务的队列，I/O事件可以直接通过selector的selectedKeys来获取，不需要将I/O任务放到队列中**。
 
 <img src="./image/NioEventLoop.jpg">
 
@@ -346,7 +327,6 @@ private SelectorTuple openSelector() {
     });
 
     if (!(maybeSelectorImplClass instanceof Class) ||
-        // ensure the current selector implementation is what we can instrument.
         !((Class<?>) maybeSelectorImplClass).isAssignableFrom(unwrappedSelector.getClass())) {
         if (maybeSelectorImplClass instanceof Throwable) {
             Throwable t = (Throwable) maybeSelectorImplClass;
@@ -367,8 +347,6 @@ private SelectorTuple openSelector() {
                 Field publicSelectedKeysField = selectorImplClass.getDeclaredField("publicSelectedKeys");
 
                 if (PlatformDependent.javaVersion() >= 9 && PlatformDependent.hasUnsafe()) {
-                    // Let us try to use sun.misc.Unsafe to replace the SelectionKeySet.
-                    // This allows us to also do this in Java9+ without any extra flags.
                     // 拿到原生selector的selectedKeys和publicSelectedKeys变量:
                     long selectedKeysFieldOffset = PlatformDependent.objectFieldOffset(selectedKeysField);
                     long publicSelectedKeysFieldOffset =
@@ -381,7 +359,6 @@ private SelectorTuple openSelector() {
                                 unwrappedSelector, publicSelectedKeysFieldOffset, selectedKeySet);
                         return null;
                     }
-                    // We could not retrieve the offset, lets try reflection as last-resort.
                 }
 
                 Throwable cause = ReflectionUtil.trySetAccessible(selectedKeysField, true);
@@ -427,6 +404,7 @@ private void execute(Runnable task, boolean immediate) {
     // 添加到任务队列:
     addTask(task);
     if (!inEventLoop) {
+        // 看底下源码:
         startThread();
         if (isShutdown()) {
             boolean reject = false;
@@ -452,12 +430,14 @@ private void execute(Runnable task, boolean immediate) {
 
 private void startThread() {
     if (state == ST_NOT_STARTED) {
+        // 通过一个状态位来保证thread只会被启动一次:
         if (STATE_UPDATER.compareAndSet(this, ST_NOT_STARTED, ST_STARTED)) {
             boolean success = false;
             try {
-                // 方法内部，thread变量被赋值，并通过一个死循环，不断地查看有没有新的任务(I/O、普通、定时)，如果有则执行，
-                // 使用NIO编程中提到的selector.select(timeoutMillis)语句，如果无任务则阻塞，有任务则被唤醒，
-                // 更具体一点来讲是，到达超时时间会被唤醒，有普通任务会被唤醒，有I/O事件会被唤醒:
+                // 方法内部，thread变量被赋值为NIO线程，并通过一个死循环，不断地查看有没有新的任务(I/O、普通、定时)可以执行，
+                // 查看任务的操作就是使用NIO编程中提到的selector.select(timeoutMillis)语句，如果无任务则阻塞，有任务则被唤醒，
+                // 更具体一点来讲是，到达超时时间会被唤醒，有普通任务会被唤醒，有I/O事件会被唤醒，
+                // 看底下源码:
                 doStartThread();
                 success = true;
             } finally {
@@ -467,6 +447,79 @@ private void startThread() {
             }
         }
     }
+}
+
+private void doStartThread() {
+    assert thread == null;
+    executor.execute(new Runnable() {
+        @Override
+        public void run() {
+            // 将thread变量赋值为executor中的线程:
+            thread = Thread.currentThread();
+            if (interrupted) {
+                thread.interrupt();
+            }
+
+            boolean success = false;
+            updateLastExecutionTime();
+            try {
+                // 看底下run方法源码:
+                SingleThreadEventExecutor.this.run();
+                success = true;
+            } catch (Throwable t) {
+                logger.warn("Unexpected exception from an event executor: ", t);
+            } finally {
+                for (;;) {
+                    int oldState = state;
+                    if (oldState >= ST_SHUTTING_DOWN || STATE_UPDATER.compareAndSet(
+                            SingleThreadEventExecutor.this, oldState, ST_SHUTTING_DOWN)) {
+                        break;
+                    }
+                }
+
+                if (success && gracefulShutdownStartTime == 0) {
+                    if (logger.isErrorEnabled()) {
+                        logger.error("Buggy " + EventExecutor.class.getSimpleName() + " implementation; " +
+                                SingleThreadEventExecutor.class.getSimpleName() + ".confirmShutdown() must " +
+                                "be called before run() implementation terminates.");
+                    }
+                }
+
+                try {
+                    for (;;) {
+                        if (confirmShutdown()) {
+                            break;
+                        }
+                    }
+
+                    for (;;) {
+                        int oldState = state;
+                        if (oldState >= ST_SHUTDOWN || STATE_UPDATER.compareAndSet(
+                                SingleThreadEventExecutor.this, oldState, ST_SHUTDOWN)) {
+                            break;
+                        }
+                    }
+
+                    confirmShutdown();
+                } finally {
+                    try {
+                        cleanup();
+                    } finally {
+                        FastThreadLocal.removeAll();
+
+                        STATE_UPDATER.set(SingleThreadEventExecutor.this, ST_TERMINATED);
+                        threadLock.countDown();
+                        int numUserTasks = drainTasks();
+                        if (numUserTasks > 0 && logger.isWarnEnabled()) {
+                            logger.warn("An event executor terminated with " +
+                                    "non-empty task queue (" + numUserTasks + ')');
+                        }
+                        terminationFuture.setSuccess(null);
+                    }
+                }
+            }
+        }
+    });
 }
 
 @Override
@@ -486,7 +539,7 @@ protected void run() {
         try {
             int strategy;
             try {
-                // 无任务时会进入SELECT分支，有任务时还会顺带再查看一次是否有I/O事件发生，尽可能地执行I/O任务:
+                // hasTasks()无任务时会进入SELECT分支，有任务时还会顺带到selector再查看一次是否有I/O事件发生，尽可能地执行I/O事件:
                 strategy = selectStrategy.calculateStrategy(selectNowSupplier, hasTasks());
                 switch (strategy) {
                 case SelectStrategy.CONTINUE:
@@ -770,7 +823,7 @@ public void read() {
 
 @Override
 protected int doReadMessages(List<Object> buf) throws Exception {
-    // 根据原生ServerSocketChannel建立连接并拿到SocketChannel:
+    // 通过原生ServerSocketChannel建立连接得到SocketChannel:
     SocketChannel ch = SocketUtils.accept(javaChannel());
 
     try {
