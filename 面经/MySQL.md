@@ -25,14 +25,5 @@
 - 前者在非叶节点也存储数据，后者在非叶节点指存储索引；
 - 前者叶节点独立，后者节点之间通过指针互相连结。
 
-## InnoDB 锁类型
-
-- Shared and Exclusive Locks
-- Intention Locks
-- Record Locks
-- Gap Locks
-- Next-Key Locks
-- Insert Intention Locks
-- AUTO-INC Locks
-- Predicate Locks for Spatial Indexes
+## InnoDB 锁
 
